@@ -9,6 +9,18 @@ pub mod downloader;
 pub mod main_controller;
 pub mod generator;
 pub mod logger;
+pub mod utils;
+
+/// 计算并打印文件的SHA256哈希值
+fn calculate_and_print_file_sha256(file_path: &std::path::Path) -> Result<()> {
+    if !file_path.exists() {
+        anyhow::bail!("指定的文件不存在: {:?}", file_path);
+    }
+
+    let hash_string = utils::calculate_file_sha256(file_path)?;
+    println!("{}", hash_string);
+    Ok(())
+}
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -22,15 +34,15 @@ struct Args {
     debug: bool,
 
     /// 生成模式：指定要扫描的目录
-    #[arg(long)]
+    #[arg(short, long, value_name = "DIR")]
     generate: Option<PathBuf>,
 
     /// 生成模式：指定用于匹配文件名的正则表达式
-    #[arg(long)]
+    #[arg(long, value_name = "NAME-REGEX")]
     pattern: Option<String>,
 
     /// 生成模式：递归扫描子目录
-    #[arg(long)]
+    #[arg(short, long)]
     recursive: bool,
 
     /// 生成模式：基础 URL，用于生成下载链接
@@ -57,11 +69,11 @@ async fn main() -> Result<()> {
 
     let result = if let Some(sha256_path) = args.sha256 {
         // 如果提供了 --sha256 参数，则计算文件的SHA256哈希值
-        calculate_file_sha256(&sha256_path)
-    } else if args.generate.is_some() {
+        calculate_and_print_file_sha256(&sha256_path)
+    } else if let Some(generate_dir) = args.generate {
         // 如果提供了 --generate 参数，则进入生成模式
         generator::generate_config(
-            args.generate.unwrap(),
+            generate_dir,
             args.pattern,
             args.recursive,
             args.base_url,
@@ -87,34 +99,6 @@ async fn main() -> Result<()> {
     result
 }
 
-/// 计算文件的SHA256哈希值
-fn calculate_file_sha256(file_path: &std::path::Path) -> Result<()> {
-    use sha2::{Sha256, Digest};
-    use std::fs::File;
-    use std::io::Read;
-
-    if !file_path.exists() {
-        anyhow::bail!("指定的文件不存在: {:?}", file_path);
-    }
-
-    let mut file = File::open(file_path)?;
-    let mut hasher = Sha256::new();
-    let mut buffer = [0; 8192]; // 8KB buffer
-
-    loop {
-        let bytes_read = file.read(&mut buffer)?;
-        if bytes_read == 0 {
-            break; // 文件读取完毕
-        }
-        hasher.update(&buffer[..bytes_read]);
-    }
-
-    let hash_bytes = hasher.finalize();
-    let hash_string = format!("{:x}", hash_bytes);
-
-    println!("{}", hash_string);
-    Ok(())
-}
 
 /// 程序退出前暂停，等待用户按键
 fn pause_before_exit() {
@@ -132,7 +116,7 @@ fn pause_before_exit() {
 
 /// 解析配置文件并执行补丁
 async fn execute_with_config(config_path: &PathBuf) -> Result<()> {
-    log::info!("正在解析配置文件: {:?}", config_path);
+    log::info!("正在解析配置文件: {}", config_path.display());
     let config = config::parse_config(config_path)
         .map_err(|e| anyhow::anyhow!("解析配置文件失败: {}", e))?;
 

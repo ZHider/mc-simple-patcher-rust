@@ -75,12 +75,19 @@ fn validate_config(config: &Config) -> Result<()> {
             // 检查是否至少有一个匹配条件
             let has_match_condition = file_rule.name.is_some()
                 || file_rule.mod_id.is_some()
-                || file_rule.name_pattern.is_some();
+                || file_rule.name_pattern.is_some()
+                || file_rule.sha256.is_some();
 
             if !has_match_condition {
-                anyhow::bail!("File rule must have at least one match condition (name, mod_id, or name_pattern)");
+                anyhow::bail!("File rule must have at least one match condition (name, mod_id, name_pattern, or sha256)");
             }
         }
+
+        // 如果定义了 pattern 字段，检查其是否为有效的正则表达式
+        if let Some(ref pattern) = group.pattern
+            && let Err(e) = regex::Regex::new(pattern) {
+                anyhow::bail!("Invalid regex pattern in group: {}. Error: {}", pattern, e);
+            }
     }
 
     Ok(())

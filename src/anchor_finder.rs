@@ -13,11 +13,11 @@ pub fn find_anchor(anchor_name: &str, start_dir: &Path, max_depth: usize) -> Res
     if current_path.exists() {
         let result = if current_path.is_file() {
             // 如果是文件，返回其所在目录
-            log::info!("在当前目录找到锚点文件: {:?}", current_path);
+            log::info!("在当前目录找到锚点文件: {}", current_path.display());
             current_path.parent().map(|p| p.to_path_buf())
         } else if current_path.is_dir() {
             // 如果是目录，返回该目录
-            log::info!("在当前目录找到锚点目录: {:?}", current_path);
+            log::info!("在当前目录找到锚点目录: {}", current_path.display());
             Some(current_path)
         } else {
             None
@@ -50,10 +50,10 @@ fn search_parent_dirs(anchor_name: &str, start_dir: &Path, max_depth: usize) -> 
         let anchor_path = parent.join(anchor_name);
         if anchor_path.exists() {
             let result = if anchor_path.is_file() {
-                log::info!("在父目录找到锚点文件: {:?}", anchor_path);
+                log::info!("在父目录找到锚点文件: {}", anchor_path.display());
                 anchor_path.parent().map(|p| p.to_path_buf())
             } else if anchor_path.is_dir() {
-                log::info!("在父目录找到锚点目录: {:?}", anchor_path);
+                log::info!("在父目录找到锚点目录: {}", anchor_path.display());
                 Some(anchor_path)
             } else {
                 None
@@ -85,12 +85,12 @@ pub fn find_anchor_optimized(anchor_name: &str, start_dir: &Path, max_depth: usi
 /// 检查特殊的目录结构
 fn check_special_structures(anchor_name: &str, start_dir: &Path) -> Option<Option<PathBuf>> {
     // 策略1: 判断当前目录是否为`mods`。如果有，查看父目录下是否有anchor文件。
-    if start_dir.file_name().map_or(false, |name| name == "mods") {
+    if start_dir.file_name().is_some_and(|name| name == "mods") {
         log::info!("当前目录是mods目录，检查父目录下是否有anchor文件: {}", anchor_name);
         if let Some(parent) = start_dir.parent() {
             let anchor_path = parent.join(anchor_name);
             if anchor_path.exists() && anchor_path.is_file() {
-                log::info!("在父目录找到anchor文件: {:?}", anchor_path);
+                log::info!("在父目录找到anchor文件: {}", anchor_path.display());
                 return Some(Some(parent.to_path_buf()));
             }
         }
@@ -102,7 +102,7 @@ fn check_special_structures(anchor_name: &str, start_dir: &Path) -> Option<Optio
         log::info!("当前目录包含mods文件夹，检查当前目录下是否有anchor文件: {}", anchor_name);
         let anchor_path = start_dir.join(anchor_name);
         if anchor_path.exists() && anchor_path.is_file() {
-            log::info!("在当前目录找到anchor文件: {:?}", anchor_path);
+            log::info!("在当前目录找到anchor文件: {}", anchor_path.display());
             return Some(Some(start_dir.to_path_buf()));
         }
     }
@@ -124,9 +124,12 @@ fn check_special_structures(anchor_name: &str, start_dir: &Path) -> Option<Optio
 
 /// 在指定目录下进行广度优先搜索，寻找anchor文件
 fn breadth_first_search_for_anchor(versions_dir: &Path, anchor_name: &str, max_depth: usize) -> Option<PathBuf> {
-    let mut queue = vec![(versions_dir.to_path_buf(), 0)]; // (目录路径, 当前深度)
+    use std::collections::VecDeque;
 
-    while let Some((current_dir, depth)) = queue.pop() {
+    let mut queue = VecDeque::new();
+    queue.push_back((versions_dir.to_path_buf(), 0)); // (目录路径, 当前深度)
+
+    while let Some((current_dir, depth)) = queue.pop_front() {
         if depth > max_depth {
             continue;
         }
@@ -147,7 +150,9 @@ fn breadth_first_search_for_anchor(versions_dir: &Path, anchor_name: &str, max_d
                 .map(|path| (path, depth + 1))
                 .collect();
 
-            queue.extend(subdirs);
+            for subdir in subdirs {
+                queue.push_back(subdir);
+            }
         }
     }
 

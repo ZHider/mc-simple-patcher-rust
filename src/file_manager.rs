@@ -23,47 +23,49 @@ pub fn matches_rule(file_path: &Path, rule: &FileRule) -> Result<bool> {
         .ok_or_else(|| anyhow::anyhow!("无法获取文件名: {:?}", file_path))?
         .to_string_lossy();
 
-    // 尝试不同的匹配方式
-    let name_matches = check_name_match(&file_name, rule);
-    let pattern_matches = check_pattern_match(&file_name, rule)?;
+    // 检查名称是否匹配（包括禁用文件名）
+    let name_matches = check_name_match_or_disabled(&file_name, rule);
+    let pattern_matches = check_pattern_match(&file_name, rule);
 
-    // 只有在需要时才检查mod信息
+    // 检查mod信息是否匹配
     let mod_info_matches = if rule.mod_id.is_some() || rule.mod_version.is_some() {
         check_mod_info_match_cached(file_path, rule)
     } else {
-        false
+        true // 如果没有指定 mod_id 或 mod_version，则认为匹配
     };
 
     // 检查SHA256是否匹配
     let sha256_matches = if let Some(ref expected_sha256) = rule.sha256 {
         check_sha256_match(file_path, expected_sha256)?
     } else {
-        false
+        true // 如果没有指定 sha256，则认为匹配
     };
 
-    Ok(name_matches || pattern_matches || mod_info_matches || sha256_matches)
+    // 由于所有条件至少存在一个，因此即使是默认的true也不会导致误判
+    Ok(name_matches && pattern_matches && mod_info_matches && sha256_matches)
 }
 
-/// 检查文件名是否匹配
-fn check_name_match(file_name: &str, rule: &FileRule) -> bool {
+/// 检查文件名是否匹配（包括禁用文件名）
+fn check_name_match_or_disabled(file_name: &str, rule: &FileRule) -> bool {
     if let Some(ref name) = rule.name {
-        return &file_name == name;
+        return file_name == name || file_name == format!("{}.disabled", name);
     }
-    false
+    true // 如果没有指定 name 字段，则认为匹配
 }
 
 /// 检查正则表达式是否匹配
-pub fn check_pattern_match(file_name: &str, rule: &FileRule) -> Result<bool> {
+pub fn check_pattern_match(file_name: &str, rule: &FileRule) -> bool {
     if let Some(ref pattern) = rule.name_pattern {
-        let re = Regex::new(pattern)?;
-        return Ok(re.is_match(file_name));
+        // Assume regex is valid since it's validated during config parsing
+        let re = Regex::new(pattern).unwrap();
+        return re.is_match(file_name);
     }
-    Ok(false)
+    true // 如果没有指定 name_pattern 字段，则认为匹配
 }
 
 /// 检查mod信息是否匹配（使用缓存）
 fn check_mod_info_match_cached(file_path: &Path, rule: &FileRule) -> bool {
-    if !file_path.extension().map_or(false, |ext| ext == "jar") {
+    if file_path.extension().is_none_or(|ext| ext != "jar") {
         return false;
     }
 
@@ -102,11 +104,11 @@ fn check_mod_info_match_cached(file_path: &Path, rule: &FileRule) -> bool {
     log::debug!("已释放缓存锁。");
 
     if let Some((mod_id, mod_version)) = mod_info_option {
-        let id_matches = rule.mod_id.as_ref().map_or(true, |id| id == &mod_id);
+        let id_matches = rule.mod_id.as_ref().is_none_or(|id| id == &mod_id);
         let version_matches = rule
             .mod_version
             .as_ref()
-            .map_or(true, |ver| ver == &mod_version);
+            .is_none_or(|ver| ver == &mod_version);
         id_matches && version_matches
     } else {
         false // 如果无法提取mod信息，则认为不匹配
@@ -115,25 +117,7 @@ fn check_mod_info_match_cached(file_path: &Path, rule: &FileRule) -> bool {
 
 /// 检查文件的SHA256哈希值是否与期望值匹配
 fn check_sha256_match(file_path: &Path, expected_sha256: &str) -> Result<bool> {
-    use sha2::{Sha256, Digest};
-    use std::fs::File;
-    use std::io::Read;
-
-    let mut file = File::open(file_path)?;
-    let mut hasher = Sha256::new();
-    let mut buffer = [0; 8192]; // 8KB buffer
-
-    loop {
-        let bytes_read = file.read(&mut buffer)?;
-        if bytes_read == 0 {
-            break; // 文件读取完毕
-        }
-        hasher.update(&buffer[..bytes_read]);
-    }
-
-    let hash_bytes = hasher.finalize();
-    let actual_sha256 = format!("{:x}", hash_bytes);
-
+    let actual_sha256 = crate::utils::calculate_file_sha256(file_path)?;
     Ok(actual_sha256.eq_ignore_ascii_case(expected_sha256))
 }
 
@@ -175,16 +159,12 @@ pub fn extract_mod_info_from_jar(jar_path: &Path) -> Result<(String, String)> {
 
 /// 在ZIP存档中查找mods.toml文件
 fn find_mods_toml_in_archive(archive: &mut ZipArchive<std::fs::File>) -> Result<String> {
-    for i in 0..archive.len() {
-        let mut file = archive.by_index(i)?;
-        if file.name() == "META-INF/mods.toml" {
-            let mut content = String::new();
-            std::io::Read::read_to_string(&mut file, &mut content)?;
-            return Ok(content);
-        }
-    }
-
-    Err(anyhow::anyhow!("JAR 文件中未找到 META-INF/mods.toml"))
+    let mut file = archive.by_name("META-INF/mods.toml")
+        .map_err(|_| anyhow::anyhow!("JAR 文件中未找到 META-INF/mods.toml"))?;
+    
+    let mut content = String::new();
+    std::io::Read::read_to_string(&mut file, &mut content)?;
+    Ok(content)
 }
 
 /// 检查是否存在对应的 .jar.disabled 文件
@@ -192,7 +172,7 @@ pub fn find_disabled_file(file_path: &Path) -> Option<PathBuf> {
     let disabled_path = create_disabled_path(file_path);
 
     if disabled_path.exists() {
-        log::info!("找到对应的 .jar.disabled 文件: {:?}", disabled_path);
+        log::info!("找到对应的 .jar.disabled 文件: {}", disabled_path.display());
         Some(disabled_path)
     } else {
         None
@@ -213,7 +193,7 @@ pub fn restore_disabled_file(disabled_path: &Path) -> Result<PathBuf> {
     let restored_path = disabled_path.with_extension("");
     fs::rename(disabled_path, &restored_path)
         .with_context(|| format!("无法恢复文件: {:?}", disabled_path))?;
-    log::info!("已恢复文件: {:?}", restored_path);
+    log::info!("已恢复文件: {}", restored_path.display());
     Ok(restored_path)
 }
 

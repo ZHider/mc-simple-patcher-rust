@@ -42,7 +42,7 @@ async fn process_group(group: &GroupConfig) -> Result<()> {
 
     let anchor_dir = match anchor_dir {
         Some(dir) => {
-            log::debug!("找到锚点目录: {:?}", dir);
+            log::debug!("找到锚点目录: {}", dir.display());
             dir
         },
         None => {
@@ -53,7 +53,7 @@ async fn process_group(group: &GroupConfig) -> Result<()> {
 
     // 计算工作目录
     let work_dir = anchor_dir.join(&group.root);
-    log::info!("工作目录: {:?}", work_dir);
+    log::info!("工作目录: {}", work_dir.display());
 
     // 获取目录中的现有文件
     let existing_files = file_manager::get_files_in_dir(&work_dir, group.recursive)?;
@@ -89,13 +89,13 @@ async fn handle_mirror_mode(existing_files: &[PathBuf], group: &GroupConfig) -> 
                 // 删除文件
                 std::fs::remove_file(file_path)
                     .with_context(|| format!("无法删除文件: {:?}", file_path))?;
-                log::info!("已删除文件: {:?}", file_path);
+                log::info!("已删除文件: {}", file_path.display());
             } else {
                 // 将文件重命名为 .jar.disabled
                 let disabled_path = file_path.with_extension(format!("{}.disabled", file_path.extension().unwrap_or_default().to_string_lossy()));
                 std::fs::rename(file_path, &disabled_path)
                     .with_context(|| format!("无法重命名文件: {:?}", file_path))?;
-                log::info!("已禁用文件: {:?}", disabled_path);
+                log::info!("已禁用文件: {}", disabled_path.display());
             }
         }
     }
@@ -112,17 +112,15 @@ async fn sync_files(work_dir: &Path, group: &GroupConfig) -> Result<()> {
 
         // 搜索目录中的文件，看是否有匹配的
         let existing_files = file_manager::get_files_in_dir(work_dir, group.recursive)?;
+
+        // 检查是否有匹配的活动文件
         let matched_file = existing_files.iter()
             .find(|file_path| file_manager::matches_rule(file_path, file_rule).unwrap_or(false));
 
         if let Some(file_path) = matched_file {
-            log::debug!("找到匹配的文件: {:?}", file_path);
-            // 检查是否有对应的 .jar.disabled 文件
-            if let Some(disabled_path) = file_manager::find_disabled_file(file_path) {
-                log::info!("恢复禁用文件: {:?}", disabled_path);
-                // 恢复 .jar.disabled 文件
-                file_manager::restore_disabled_file(&disabled_path)?;
-            }
+            log::debug!("找到匹配的文件: {}", file_path.display());
+            // 检查并恢复禁用的文件
+            handle_disabled_file(file_path)?;
         } else {
             log::debug!("未找到匹配的文件，准备下载");
             // 没有找到匹配的文件，需要下载
@@ -134,11 +132,9 @@ async fn sync_files(work_dir: &Path, group: &GroupConfig) -> Result<()> {
 
             let dest_path = work_dir.join(&file_name);
 
-            // 检查是否有对应的 .jar.disabled 文件
-            if let Some(disabled_path) = file_manager::find_disabled_file(&dest_path) {
-                log::info!("恢复禁用文件: {:?}", disabled_path);
-                // 恢复 .jar.disabled 文件
-                file_manager::restore_disabled_file(&disabled_path)?;
+            // 检查并恢复禁用的文件，如果存在则不需要下载
+            if handle_disabled_file(&dest_path)? {
+                // 文件已从禁用状态恢复，无需下载
             } else {
                 log::info!("下载文件: {}", file_rule.url);
                 // 下载文件
@@ -148,6 +144,17 @@ async fn sync_files(work_dir: &Path, group: &GroupConfig) -> Result<()> {
     }
 
     Ok(())
+}
+
+/// 检查并恢复禁用的文件
+fn handle_disabled_file(file_path: &Path) -> Result<bool> {
+    if let Some(disabled_path) = file_manager::find_disabled_file(file_path) {
+        log::info!("恢复禁用文件: {}", disabled_path.display());
+        file_manager::restore_disabled_file(&disabled_path)?;
+        Ok(true) // 表示文件已恢复
+    } else {
+        Ok(false) // 表示没有禁用的文件
+    }
 }
 
 #[cfg(test)]

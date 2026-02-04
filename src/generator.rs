@@ -3,6 +3,7 @@
 
 use crate::config::FileRule;
 use crate::file_manager;
+use crate::utils;
 use anyhow::Result;
 use std::path::PathBuf;
 
@@ -14,15 +15,15 @@ pub fn generate_config(
     base_url: Option<String>,
     mod_info: bool,
 ) -> Result<()> {
-    log::info!("开始生成配置，目录: {:?}", dir);
+    log::info!("开始生成配置，目录: {}", dir.display());
 
     // 检查目录是否存在
     if !dir.exists() {
-        anyhow::bail!("指定的目录不存在: {:?}", dir);
+        anyhow::bail!("指定的目录不存在: {}", dir.display());
     }
 
     if !dir.is_dir() {
-        anyhow::bail!("指定的路径不是目录: {:?}", dir);
+        anyhow::bail!("指定的路径不是目录: {}", dir.display());
     }
 
     // 保存原始 pattern 用于后续输出
@@ -56,16 +57,13 @@ pub fn generate_config(
                 .unwrap_or("")
                 .to_string();
 
-            match file_manager::check_pattern_match(&file_name, &temp_rule) {
-                Ok(matches) => matches,
-                Err(_) => false, // 如果出现错误，视为不匹配
-            }
+            file_manager::check_pattern_match(&file_name, &temp_rule)
         })
         .collect();
 
     // 输出 TOML 格式的配置
     println!("# 由 generate 功能自动生成的配置");
-    println!("# 目录: {:?}", dir);
+    println!("# 目录: {}", dir.display());
     println!("# 递归: {}", recursive);
     if let Some(ref pat) = pattern_str {
         println!("# 模式: {}", pat);
@@ -107,26 +105,26 @@ pub fn generate_config(
         }
 
         // 如果启用了模组信息提取，则尝试提取
-        if mod_info && file_path.extension().map_or(false, |ext| ext == "jar") {
+        if mod_info && file_path.extension().is_some_and(|ext| ext == "jar") {
             match file_manager::extract_mod_info_from_jar(file_path) {
                 Ok((mod_id, mod_version)) => {
                     println!("mod_id = \"{}\"", mod_id);
                     println!("mod_version = \"{}\"", mod_version);
                 }
                 Err(e) => {
-                    log::warn!("无法从 {:?} 提取模组信息: {}", file_path, e);
+                    log::warn!("无法从 {} 提取模组信息: {}", file_path.display(), e);
                     // 即使提取失败，也继续处理下一个文件
                 }
             }
         }
 
         // 计算并添加SHA256哈希值
-        match calculate_file_sha256(file_path) {
+        match utils::calculate_file_sha256(file_path) {
             Ok(sha256) => {
                 println!("sha256 = \"{}\"", sha256);
             }
             Err(e) => {
-                log::warn!("无法计算 {:?} 的SHA256: {}", file_path, e);
+                log::warn!("无法计算 {} 的SHA256: {}", file_path.display(), e);
             }
         }
 
@@ -137,29 +135,6 @@ pub fn generate_config(
     Ok(())
 }
 
-/// 计算文件的SHA256哈希值
-fn calculate_file_sha256(file_path: &std::path::Path) -> Result<String> {
-    use sha2::{Sha256, Digest};
-    use std::fs::File;
-    use std::io::Read;
-
-    let mut file = File::open(file_path)?;
-    let mut hasher = Sha256::new();
-    let mut buffer = [0; 8192]; // 8KB buffer
-
-    loop {
-        let bytes_read = file.read(&mut buffer)?;
-        if bytes_read == 0 {
-            break; // 文件读取完毕
-        }
-        hasher.update(&buffer[..bytes_read]);
-    }
-
-    let hash_bytes = hasher.finalize();
-    let hash_string = format!("{:x}", hash_bytes);
-
-    Ok(hash_string)
-}
 
 #[cfg(test)]
 mod tests {

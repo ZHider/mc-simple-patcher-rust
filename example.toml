@@ -27,8 +27,10 @@ delete = false
 
 # 组规则
 # 用于指定将什么样的文件对应于该组中
+# 隐含包含.disabled后缀名的文件
 pattern = '^.+\.jar$'
 
+# 以下规则如果有多个，关系为和（AND）
 [[groups.files]]
 # 如果有 name 字段，则优先使用文件名进行完全匹配
 name = "[矿石挖掘] OreExcavation-1.10.162.jar"
@@ -36,12 +38,13 @@ url = "https://example.com/files/OreExcavation-1.10.162.jar"
 
 [[groups.files]]
 # 如果有 mod_id 字段，则使用 mod_id 和 mod_version 进行匹配
+# 若使用此种定义方式，mod_id为必需字段，mod_version为可选字段 
 mod_id = "immersiveengineering"
 mod_version = "1.18.2-8.4.0-161"
 url = "https://example.com/files/immersiveengineering-1.18.2-8.4.0-161.jar"
 
 [[groups.files]]
 # 如果有 name_pattern 字段，则使用正则表达式进行文件名匹配
-# 有该字段时会无视 name 字段
+# 不隐含.disabled后缀名的文件
 name_pattern = '^lucky_hat-1.0.\d.jar$'
 url = "https://example.com/files/JustEnoughItems-latest.jar"

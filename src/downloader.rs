@@ -1,24 +1,15 @@
 use anyhow::{Context, Result};
 use futures_util::StreamExt;
 use reqwest;
-use sha2::{Sha256, Digest};
-use std::fs;
 use std::io::Write;
 use std::path::Path;
 use std::time::Instant;
 use tokio::io::AsyncWriteExt;
+use crate::utils;
 
 /// 进度回调类型
 pub type ProgressCallback = dyn Fn(u64, Option<u64>, Instant) -> Result<()> + Send + Sync;
 
-/// 计算文件的SHA256哈希值
-fn calculate_file_sha256(file_path: &Path) -> Result<String> {
-    let mut file = fs::File::open(file_path)?;
-    let mut hasher = Sha256::new();
-    std::io::copy(&mut file, &mut hasher)?;
-    let hash_bytes = hasher.finalize();
-    Ok(format!("{:x}", hash_bytes))
-}
 
 /// 从HTTP响应头中尝试获取SHA256哈希值
 fn get_sha256_from_headers(response: &reqwest::Response) -> Option<String> {
@@ -69,7 +60,7 @@ async fn check_file_integrity(url: &str, dest_path: &Path) -> Result<bool> {
         return Ok(false);
     }
 
-    log::info!("文件已存在，检查完整性: {:?}", dest_path);
+    log::info!("文件已存在，检查完整性: {}", dest_path.display());
 
     // 获取远程文件的SHA256哈希值
     let client = reqwest::Client::new();
@@ -85,7 +76,7 @@ async fn check_file_integrity(url: &str, dest_path: &Path) -> Result<bool> {
     if head_response.status().is_success() {
         remote_sha256 = get_sha256_from_headers(&head_response);
     } else {
-        log::warn!("HEAD请求失败: {}", head_response.status());
+        log::debug!("HEAD请求失败: {}", head_response.status());
     }
 
     // 如果头部没有提供，则尝试从.sha256文件获取
@@ -95,18 +86,18 @@ async fn check_file_integrity(url: &str, dest_path: &Path) -> Result<bool> {
 
     if let Some(remote_sha256_val) = remote_sha256 {
         // 计算本地文件的SHA256哈希值
-        let local_sha256 = calculate_file_sha256(dest_path)?;
+        let local_sha256 = utils::calculate_file_sha256(dest_path)?;
 
         if local_sha256 == remote_sha256_val {
-            log::info!("文件已是最新版本: {:?}", dest_path);
-            return Ok(true);
+            log::info!("文件已是最新版本: {}", dest_path.display());
+            Ok(true)
         } else {
-            log::info!("文件已存在但内容不同，需要重新下载: {:?}", dest_path);
-            return Ok(false);
+            log::info!("文件已存在但内容不同，需要重新下载: {}", dest_path.display());
+            Ok(false)
         }
     } else {
-        log::info!("服务器未提供SHA256哈希值，跳过完整性检查: {:?}", dest_path);
-        return Ok(false);
+        log::info!("服务器未提供SHA256哈希值，跳过完整性检查: {}", dest_path.display());
+        Ok(false)
     }
 }
 
@@ -114,7 +105,7 @@ async fn check_file_integrity(url: &str, dest_path: &Path) -> Result<bool> {
 pub async fn download_file(url: &str, dest_path: &Path) -> Result<()> {
     // 检查文件是否已存在且完整
     if check_file_integrity(url, dest_path).await? {
-        log::info!("跳过下载，文件已是最新版本: {:?}", dest_path);
+        log::info!("跳过下载，文件已是最新版本: {}", dest_path.display());
         return Ok(());
     }
 
@@ -127,7 +118,7 @@ pub async fn download_file_with_progress(
     dest_path: &Path,
     progress_callback: Option<&ProgressCallback>,
 ) -> Result<()> {
-    log::info!("开始下载: {} -> {:?}", url, dest_path);
+    log::info!("开始下载: {} -> {}", url, dest_path.display());
 
     let client = reqwest::Client::new();
     let response = client
@@ -156,7 +147,7 @@ pub async fn download_file_with_progress(
 
     // 换行并显示完成信息
     println!();
-    log::info!("下载完成: {:?} ({} bytes)", dest_path, downloaded);
+    log::info!("下载完成: {} ({} bytes)", dest_path.display(), downloaded);
     Ok(())
 }
 
@@ -238,7 +229,7 @@ fn human_readable_size(size: u64) -> String {
         unit_index += 1;
     }
 
-    format!("{:.1}{}", size, UNITS[unit_index])
+    format!("{:.2}{}", size, UNITS[unit_index])
 }
 
 #[cfg(test)]
@@ -298,7 +289,7 @@ mod tests {
         let test_file = temp_dir.path().join("test_hash.txt");
         std::fs::write(&test_file, "hello world")?;  // Just "hello world" without newline
 
-        let hash = calculate_file_sha256(&test_file)?;
+        let hash = utils::calculate_file_sha256(&test_file)?;
         // SHA256 of "hello world" is b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9
         assert_eq!(hash, "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9");
 

@@ -18,7 +18,6 @@ impl DualLogger {
     pub fn new(debug: bool) -> Result<Self> {
         let file = OpenOptions::new()
             .create(true)
-            .write(true)
             .append(true)
             .open("mc_simple_patcher.log")?;
 

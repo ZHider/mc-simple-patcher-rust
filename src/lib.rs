@@ -9,3 +9,4 @@ pub mod downloader;
 pub mod main_controller;
 pub mod generator;
 pub mod logger;
+pub mod utils;
