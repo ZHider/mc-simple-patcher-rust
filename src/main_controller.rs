@@ -10,6 +10,9 @@ use crate::{
     downloader,
 };
 
+/// 默认最大递归深度
+const DEFAULT_MAX_DEPTH: usize = 10;
+
 /// 执行补丁操作
 pub async fn execute_patch(config: &Config) -> Result<()> {
     log::info!("开始执行补丁操作");
@@ -30,7 +33,7 @@ async fn process_group(group: &GroupConfig) -> Result<()> {
     let anchor_dir = anchor_finder::find_anchor_optimized(
         &group.anchor,
         &std::env::current_dir()?,
-        10 // 默认最大递归深度为10
+        DEFAULT_MAX_DEPTH
     )
     .with_context(|| format!("无法找到锚点: {}", group.anchor))?;
 

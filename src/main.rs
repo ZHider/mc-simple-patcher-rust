@@ -12,7 +12,7 @@ pub mod main_controller;
 #[command(author, version, about, long_about = None)]
 struct Args {
     /// 配置文件路径
-    #[arg(short, long, default_value = "config.toml")]
+    #[arg(short, long, default_value = "mc_simple_patcher.toml")]
     config: PathBuf,
 
     /// 启用调试模式
@@ -33,7 +33,25 @@ async fn main() -> Result<()> {
     execute_with_config(&args.config).await?;
 
     log::info!("程序执行完成");
+
+    // 等待用户按键退出
+    pause_before_exit();
+
     Ok(())
+}
+
+/// 程序退出前暂停，等待用户按键
+fn pause_before_exit() {
+    use std::io::{stdin, stdout, Write};
+
+    print!("\n请按任意键退出...");
+    let _ = stdout().flush(); // 确保提示信息立即显示
+
+    // 读取一个字符
+    let mut input = String::new();
+    let _ = stdin().read_line(&mut input);
+
+    println!(); // 换行
 }
 
 /// 解析配置文件并执行补丁
