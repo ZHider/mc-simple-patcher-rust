@@ -25,7 +25,24 @@ cargo run -- -c my_config.toml
 
 # 启用调试模式
 cargo run -- -d
+
+# 生成配置文件 - 扫描目录并生成配置
+cargo run -- --generate <dir> --pattern "<re-pattern>" --base-url "<base-url>"
+
+# 生成配置文件 - 递归扫描子目录
+cargo run -- --generate <dir> --pattern "<re-pattern>" --recursive --base-url "<base-url>"
+
+# 生成配置文件 - 尝试提取模组信息
+cargo run -- --generate <dir> --pattern "<re-pattern>" --mod-info --base-url "<base-url>"
 ```
+
+### 生成配置文件参数说明
+
+- `--generate <dir>`: 指定要扫描的目录
+- `--pattern <re-pattern>`: 指定用于匹配文件名的正则表达式
+- `--recursive`: 递归扫描子目录
+- `--base-url <base-url>`: 基础 URL，用于生成下载链接
+- `--mod-info`: 尝试提取模组信息（mod ID 和 version）
 
 ## 配置文件格式
 

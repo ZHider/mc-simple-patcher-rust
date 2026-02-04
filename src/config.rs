@@ -21,6 +21,7 @@ pub struct FileRule {
     pub mod_version: Option<String>,
     pub name_pattern: Option<String>,
     pub url: String,
+    pub sha256: Option<String>,
 }
 
 /// 组配置
@@ -127,6 +128,7 @@ mod tests {
                     mod_version: None,
                     name_pattern: None,
                     url: "https://example.com/test.jar".to_string(),
+                    sha256: None,
                 }],
             }],
         };

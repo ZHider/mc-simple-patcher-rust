@@ -34,7 +34,14 @@ pub fn matches_rule(file_path: &Path, rule: &FileRule) -> Result<bool> {
         false
     };
 
-    Ok(name_matches || pattern_matches || mod_info_matches)
+    // 检查SHA256是否匹配
+    let sha256_matches = if let Some(ref expected_sha256) = rule.sha256 {
+        check_sha256_match(file_path, expected_sha256)?
+    } else {
+        false
+    };
+
+    Ok(name_matches || pattern_matches || mod_info_matches || sha256_matches)
 }
 
 /// 检查文件名是否匹配
@@ -46,7 +53,7 @@ fn check_name_match(file_name: &str, rule: &FileRule) -> bool {
 }
 
 /// 检查正则表达式是否匹配
-fn check_pattern_match(file_name: &str, rule: &FileRule) -> Result<bool> {
+pub fn check_pattern_match(file_name: &str, rule: &FileRule) -> Result<bool> {
     if let Some(ref pattern) = rule.name_pattern {
         let re = Regex::new(pattern)?;
         return Ok(re.is_match(file_name));
@@ -104,6 +111,30 @@ fn check_mod_info_match_cached(file_path: &Path, rule: &FileRule) -> bool {
     } else {
         false // 如果无法提取mod信息，则认为不匹配
     }
+}
+
+/// 检查文件的SHA256哈希值是否与期望值匹配
+fn check_sha256_match(file_path: &Path, expected_sha256: &str) -> Result<bool> {
+    use sha2::{Sha256, Digest};
+    use std::fs::File;
+    use std::io::Read;
+
+    let mut file = File::open(file_path)?;
+    let mut hasher = Sha256::new();
+    let mut buffer = [0; 8192]; // 8KB buffer
+
+    loop {
+        let bytes_read = file.read(&mut buffer)?;
+        if bytes_read == 0 {
+            break; // 文件读取完毕
+        }
+        hasher.update(&buffer[..bytes_read]);
+    }
+
+    let hash_bytes = hasher.finalize();
+    let actual_sha256 = format!("{:x}", hash_bytes);
+
+    Ok(actual_sha256.eq_ignore_ascii_case(expected_sha256))
 }
 
 /// 从 JAR 文件中提取 mod 信息
@@ -239,6 +270,7 @@ mod tests {
             mod_version: None,
             name_pattern: None,
             url: "http://example.com/test.jar".to_string(),
+            sha256: None,
         };
 
         let matches = matches_rule(&test_file, &rule)?;

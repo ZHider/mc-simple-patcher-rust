@@ -149,3 +149,44 @@ async fn sync_files(work_dir: &Path, group: &GroupConfig) -> Result<()> {
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use tempfile::TempDir;
+    use crate::config::{Config, MetadataConfig, GroupConfig};
+
+    #[tokio::test]
+    async fn test_execute_patch_with_mock_config() -> Result<()> {
+        // 创建临时目录
+        let temp_dir = TempDir::new()?;
+        let anchor_file = temp_dir.path().join("test_anchor.txt");
+        fs::write(&anchor_file, "test content")?;
+
+        // 创建一个测试配置
+        let config = Config {
+            metadata_config: MetadataConfig {
+                metadata: Some("Test Modpack".to_string()),
+                version: Some(1),
+            },
+            groups: vec![GroupConfig {
+                anchor: "test_anchor.txt".to_string(),
+                root: "mods".to_string(),
+                recursive: false,
+                mirror: false,
+                delete: false,
+                pattern: None,
+                files: vec![],
+            }],
+        };
+
+        // 执行补丁操作
+        let result = execute_patch(&config).await;
+
+        // 验证结果
+        assert!(result.is_ok());
+
+        Ok(())
+    }
+}

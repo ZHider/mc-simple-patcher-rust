@@ -5,16 +5,20 @@ edition = "2024"
 
 [dependencies]
 anyhow = "1.0.100"
+bytes = "1.9.0"
 chrono = "0.4.43"
 clap = { version = "4.5.57", features = ["derive"] }
 console = "0.16.2"
 env_logger = "0.11.8"
+futures-util = "0.3.31"
 lazy_static = "1.5.0"
 log = "0.4.29"
 regex = "1.12.3"
 reqwest = { version = "0.13.1", features = ["blocking", "stream"] }
 serde = { version = "1.0.228", features = ["derive"] }
+sha2 = "0.10.8"
 tokio = { version = "1.49.0", features = ["full"] }
+tokio-util = { version = "0.7.12", features = ["io"] }
 toml = "0.9.11"
 walkdir = "2.5.0"
 zip = "7.2.0"
