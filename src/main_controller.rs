@@ -16,8 +16,10 @@ const DEFAULT_MAX_DEPTH: usize = 10;
 /// 执行补丁操作
 pub async fn execute_patch(config: &Config) -> Result<()> {
     log::info!("开始执行补丁操作");
+    log::debug!("当前有 {} 个组需要处理", config.groups.len());
 
-    for group in &config.groups {
+    for (index, group) in config.groups.iter().enumerate() {
+        log::debug!("处理第 {} 个组，anchor: {}", index, group.anchor);
         process_group(group).await?;
     }
 
@@ -28,6 +30,7 @@ pub async fn execute_patch(config: &Config) -> Result<()> {
 /// 处理单个组
 async fn process_group(group: &GroupConfig) -> Result<()> {
     log::info!("处理组: anchor={}", group.anchor);
+    log::debug!("组配置: {:?}", group);
 
     // 查找锚点
     let anchor_dir = anchor_finder::find_anchor_optimized(
@@ -38,7 +41,10 @@ async fn process_group(group: &GroupConfig) -> Result<()> {
     .with_context(|| format!("无法找到锚点: {}", group.anchor))?;
 
     let anchor_dir = match anchor_dir {
-        Some(dir) => dir,
+        Some(dir) => {
+            log::debug!("找到锚点目录: {:?}", dir);
+            dir
+        },
         None => {
             log::warn!("未找到锚点 {}, 跳过此组", group.anchor);
             return Ok(());
@@ -51,9 +57,11 @@ async fn process_group(group: &GroupConfig) -> Result<()> {
 
     // 获取目录中的现有文件
     let existing_files = file_manager::get_files_in_dir(&work_dir, group.recursive)?;
+    log::debug!("找到 {} 个现有文件", existing_files.len());
 
     // 处理镜像模式
     if group.mirror {
+        log::debug!("启用镜像模式。");
         handle_mirror_mode(&existing_files, group).await?;
     }
 
@@ -65,7 +73,7 @@ async fn process_group(group: &GroupConfig) -> Result<()> {
 
 /// 处理镜像模式
 async fn handle_mirror_mode(existing_files: &[PathBuf], group: &GroupConfig) -> Result<()> {
-    log::info!("处理镜像模式");
+    log::info!("处理镜像模式……");
 
     // 检查现有文件是否在配置中列出
     for file_path in existing_files {
@@ -97,21 +105,26 @@ async fn handle_mirror_mode(existing_files: &[PathBuf], group: &GroupConfig) -> 
 
 /// 同步文件
 async fn sync_files(work_dir: &Path, group: &GroupConfig) -> Result<()> {
-    log::info!("同步文件");
+    log::info!("正准备同步 {} 个文件……", group.files.len());
 
-    for file_rule in &group.files {
+    for (index, file_rule) in group.files.iter().enumerate() {
+        log::debug!("处理第 {} 个文件规则", index + 1);
+
         // 搜索目录中的文件，看是否有匹配的
         let existing_files = file_manager::get_files_in_dir(work_dir, group.recursive)?;
         let matched_file = existing_files.iter()
             .find(|file_path| file_manager::matches_rule(file_path, file_rule).unwrap_or(false));
 
         if let Some(file_path) = matched_file {
+            log::debug!("找到匹配的文件: {:?}", file_path);
             // 检查是否有对应的 .jar.disabled 文件
             if let Some(disabled_path) = file_manager::find_disabled_file(file_path) {
+                log::info!("恢复禁用文件: {:?}", disabled_path);
                 // 恢复 .jar.disabled 文件
                 file_manager::restore_disabled_file(&disabled_path)?;
             }
         } else {
+            log::debug!("未找到匹配的文件，准备下载");
             // 没有找到匹配的文件，需要下载
             let file_name = Path::new(&file_rule.url)
                 .file_name()
@@ -123,9 +136,11 @@ async fn sync_files(work_dir: &Path, group: &GroupConfig) -> Result<()> {
 
             // 检查是否有对应的 .jar.disabled 文件
             if let Some(disabled_path) = file_manager::find_disabled_file(&dest_path) {
+                log::info!("恢复禁用文件: {:?}", disabled_path);
                 // 恢复 .jar.disabled 文件
                 file_manager::restore_disabled_file(&disabled_path)?;
             } else {
+                log::info!("下载文件: {}", file_rule.url);
                 // 下载文件
                 downloader::download_file(&file_rule.url, &dest_path).await?;
             }

@@ -29,15 +29,21 @@ async fn main() -> Result<()> {
 
     log::info!("Minecraft 简易补丁工具启动");
 
-    // 解析配置文件并执行补丁
-    execute_with_config(&args.config).await?;
+    let result = execute_with_config(&args.config).await;
 
-    log::info!("程序执行完成");
+    match &result {
+        Ok(()) => {
+            log::info!("程序执行完成");
+        }
+        Err(e) => {
+            log::error!("程序执行出错: {}", e);
+        }
+    }
 
-    // 等待用户按键退出
+    // 无论成功还是失败，都等待用户按键退出
     pause_before_exit();
 
-    Ok(())
+    result
 }
 
 /// 程序退出前暂停，等待用户按键
@@ -63,35 +69,45 @@ async fn execute_with_config(config_path: &PathBuf) -> Result<()> {
     main_controller::execute_patch(&config).await
 }
 
-/// 初始化日志系统
-fn init_logger(debug: bool) -> Result<()> {
-    use std::fs::OpenOptions;
-    use env_logger::Builder;
-    use log::LevelFilter;
-    use std::io::Write;
+use log::{Metadata, Record};
+use std::fs::OpenOptions;
+use std::io::Write;
+use std::sync::Mutex;
 
-    // 设置日志级别
-    let level = if debug {
-        LevelFilter::Debug
-    } else {
-        LevelFilter::Info
-    };
+struct DualLogger {
+    file: Mutex<std::fs::File>,
+    debug: bool,
+}
 
-    // 创建日志文件
-    let mut log_file = OpenOptions::new()
-        .create(true)
-        .write(true)
-        .append(true) // 使用追加模式而不是截断
-        .open("mc_simple_patcher.log")?;
+impl DualLogger {
+    fn new(debug: bool) -> Result<Self> {
+        let file = OpenOptions::new()
+            .create(true)
+            .write(true)
+            .append(true)
+            .open("mc_simple_patcher.log")?;
 
-    // 配置 env_logger
-    let mut builder = Builder::new();
-    builder
-        .filter_level(level)
-        .format(|buf, record| {
-            use std::io::Write;
+        Ok(DualLogger {
+            file: Mutex::new(file),
+            debug,
+        })
+    }
+}
+
+impl log::Log for DualLogger {
+    fn enabled(&self, metadata: &Metadata) -> bool {
+        if self.debug {
+            metadata.level() <= log::Level::Debug
+        } else {
+            metadata.level() <= log::Level::Info
+        }
+    }
+
+    fn log(&self, record: &Record) {
+        if self.enabled(record.metadata()) {
             use console::Style;
 
+            // 输出到控制台
             let level_tag = match record.level() {
                 log::Level::Info => {
                     let style = Style::new().green();
@@ -108,13 +124,31 @@ fn init_logger(debug: bool) -> Result<()> {
                 _ => format!("[{}]", record.level()),
             };
 
-            writeln!(buf, "{} {}", level_tag, record.args())
-        })
-        .target(env_logger::Target::Stdout) // 输出到控制台
-        .init();
+            println!("{} {}", level_tag, record.args());
 
-    // 同时写入日志文件
-    writeln!(log_file, "[{}] Logger initialized", chrono::Utc::now().format("%Y-%m-%d %H:%M:%S"))?;
+            // 同时写入日志文件
+            if let Ok(mut file) = self.file.lock() {
+                let timestamp = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S");
+                let _ = writeln!(file, "[{}] [{}] {}", timestamp, record.level(), record.args());
+            }
+        }
+    }
 
+    fn flush(&self) {
+        if let Ok(mut file) = self.file.lock() {
+            let _ = file.flush();
+        }
+    }
+}
+
+/// 初始化日志系统
+fn init_logger(debug: bool) -> Result<()> {
+    let logger = DualLogger::new(debug)?;
+
+    log::set_boxed_logger(Box::new(logger))
+        .map(|()| log::set_max_level(log::LevelFilter::Debug))
+        .map_err(|e| anyhow::anyhow!("Failed to initialize logger: {}", e))?;
+
+    log::info!("Logger initialized");
     Ok(())
 }
