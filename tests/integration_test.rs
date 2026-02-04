@@ -1,7 +1,7 @@
 use std::fs;
 use tempfile::TempDir;
 use mc_simple_patcher::config;
-use mc_simple_patcher::main_controller::MainController;
+use mc_simple_patcher::main_controller;
 
 #[tokio::test]
 async fn test_full_workflow() {
@@ -39,9 +39,8 @@ async fn test_full_workflow() {
     // 解析配置
     let parsed_config = config::parse_config(&config_path).expect("解析配置失败");
 
-    // 创建控制器并执行
-    let controller = MainController::new();
-    let result: Result<(), anyhow::Error> = controller.execute_patch(&parsed_config).await;
+    // 直接调用执行函数
+    let result: Result<(), anyhow::Error> = main_controller::execute_patch(&parsed_config).await;
 
     // 不检查结果是否成功，因为下载可能因网络问题而失败
     // 我们只测试程序是否能正常执行而不崩溃

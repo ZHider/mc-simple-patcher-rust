@@ -29,17 +29,20 @@ async fn main() -> Result<()> {
 
     log::info!("Minecraft 简易补丁工具启动");
 
-    // 解析配置文件
-    log::info!("正在解析配置文件: {:?}", args.config);
-    let config = config::parse_config(&args.config)
-        .map_err(|e| anyhow::anyhow!("解析配置文件失败: {}", e))?;
-
-    // 创建主控制器并执行补丁
-    let controller = main_controller::MainController::new();
-    controller.execute_patch(&config).await?;
+    // 解析配置文件并执行补丁
+    execute_with_config(&args.config).await?;
 
     log::info!("程序执行完成");
     Ok(())
+}
+
+/// 解析配置文件并执行补丁
+async fn execute_with_config(config_path: &PathBuf) -> Result<()> {
+    log::info!("正在解析配置文件: {:?}", config_path);
+    let config = config::parse_config(config_path)
+        .map_err(|e| anyhow::anyhow!("解析配置文件失败: {}", e))?;
+
+    main_controller::execute_patch(&config).await
 }
 
 /// 初始化日志系统
