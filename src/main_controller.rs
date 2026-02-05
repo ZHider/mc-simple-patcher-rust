@@ -56,7 +56,12 @@ async fn process_group(group: &GroupConfig) -> Result<()> {
     log::info!("工作目录: {}", work_dir.display());
 
     // 获取目录中的现有文件
-    let pattern = Regex::new(group.pattern.as_deref().unwrap()).unwrap();
+    let pattern = if let Some(pattern_str) = &group.pattern {
+        Regex::new(pattern_str).with_context(|| format!("无效的正则表达式: {}", pattern_str))?
+    } else {
+        // 如果没有指定模式，默认匹配所有文件
+        Regex::new(r".*").with_context(|| "创建默认正则表达式失败".to_string())?
+    };
     let existing_files =
         file_manager::get_files_in_dir(&work_dir, group.recursive, Some(&pattern))?;
     log::debug!("找到 {} 个现有文件", existing_files.len());
@@ -116,7 +121,12 @@ async fn sync_files(work_dir: &Path, group: &GroupConfig) -> Result<()> {
         log::debug!("处理第 {} 个文件规则", index + 1);
 
         // 搜索目录中的文件，看是否有匹配的
-        let pattern = Regex::new(group.pattern.as_deref().unwrap()).unwrap();
+        let pattern = if let Some(pattern_str) = &group.pattern {
+            Regex::new(pattern_str).with_context(|| format!("无效的正则表达式: {}", pattern_str))?
+        } else {
+            // 如果没有指定模式，默认匹配所有文件
+            Regex::new(r".*").with_context(|| "创建默认正则表达式失败".to_string())?
+        };
         let existing_files =
             file_manager::get_files_in_dir(work_dir, group.recursive, Some(&pattern))?;
 

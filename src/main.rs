@@ -1,5 +1,5 @@
 use anyhow::{Ok, Result};
-use clap::Parser;
+use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
 pub mod anchor_finder;
@@ -22,9 +22,22 @@ fn calculate_and_print_file_sha256(file_path: &std::path::Path) -> Result<()> {
     Ok(())
 }
 
+#[derive(Subcommand, Debug)]
+enum Commands {
+    /// 从TOML文件生成配置文件
+    Generate {
+        /// 指定输入的TOML文件
+        #[arg(value_name = "TOML_FILE")]
+        toml_file: PathBuf,
+    },
+}
+
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {
+    #[command(subcommand)]
+    command: Option<Commands>,
+
     /// 配置文件路径
     #[arg(short, long, default_value = "mc_simple_patcher.toml")]
     config: PathBuf,
@@ -32,26 +45,6 @@ struct Args {
     /// 启用调试模式
     #[arg(short, long)]
     debug: bool,
-
-    /// 生成模式：指定要扫描的目录
-    #[arg(short, long, value_name = "DIR")]
-    generate: Option<PathBuf>,
-
-    /// 生成模式：指定用于匹配文件名的正则表达式
-    #[arg(long, value_name = "NAME-REGEX")]
-    pattern: Option<String>,
-
-    /// 生成模式：递归扫描子目录
-    #[arg(short, long)]
-    recursive: bool,
-
-    /// 生成模式：基础 URL，用于生成下载链接
-    #[arg(long)]
-    base_url: Option<String>,
-
-    /// 生成模式：尝试提取模组信息（mod ID 和 version）
-    #[arg(long)]
-    mod_info: bool,
 
     /// SHA256模式：计算指定文件的SHA256哈希值
     #[arg(long)]
@@ -67,21 +60,20 @@ async fn main() -> Result<()> {
 
     log::info!("Minecraft 简易补丁工具启动");
 
-    let result = if let Some(sha256_path) = args.sha256 {
-        // 如果提供了 --sha256 参数，则计算文件的SHA256哈希值
-        calculate_and_print_file_sha256(&sha256_path)
-    } else if let Some(generate_dir) = args.generate {
-        // 如果提供了 --generate 参数，则进入生成模式
-        generator::generate_config(
-            generate_dir,
-            args.pattern,
-            args.recursive,
-            args.base_url,
-            args.mod_info,
-        )
-    } else {
-        // 否则执行原有的补丁逻辑
-        execute_with_config(&args.config).await
+    let result = match args.command {
+        Some(Commands::Generate { toml_file }) => {
+            // 如果提供了 generate 子命令，则进入生成模式
+            generator::generate_config_from_toml(toml_file).await
+        }
+        None => {
+            // 如果没有提供子命令，则执行原有的补丁逻辑
+            if let Some(sha256_path) = args.sha256 {
+                // 如果提供了 --sha256 参数，则计算文件的SHA256哈希值
+                calculate_and_print_file_sha256(&sha256_path)
+            } else {
+                execute_with_config(&args.config).await
+            }
+        }
     };
 
     if let Err(e) = &result {
@@ -114,12 +106,12 @@ fn pause_before_exit() {
 /// 解析配置文件并执行补丁
 async fn execute_with_config(config_path: &std::path::Path) -> Result<()> {
     log::info!("正在解析配置文件: {}", config_path.display());
-    let config = update_metadata_if_needed(config_path).await?;
+    let config = update_metadata(config_path).await?;
     pause_before_exit();
     main_controller::execute_patch(&config).await
 }
 
-async fn update_metadata_if_needed(
+async fn update_metadata(
     config_path: &std::path::Path,
 ) -> Result<config::Config> {
     let config = config::parse_config(config_path)

@@ -1,0 +1,29 @@
+# 更新文件地址，每次启动都会检查更新
+metadata = "http://example.com/metadata.toml"
+
+# 版本号，目前仅作为标识作用
+version = 0
+
+[[generate]]
+# 锚点文件/文件夹，用于定位工作目录
+# 一般可以设置为 Minecraft 主 jar 文件
+anchor = "Minecraft.jar"
+
+# 工作目录，相对于锚点文件夹
+root = "mods"
+
+# 用于匹配文件的正则表达式
+pattern = '^.+\.jar$'
+
+# 是否包含子文件夹中的文件
+recursive = false
+
+# URL 基础路径，用于生成下载链接
+# 每个文件的下载连接将被生成为 "{url_base}{name}"
+url_base = "http://example.com/mods/"
+
+# 以下选项控制生成的配置中包含哪些字段
+name = true          # 是否包含文件名
+mod_id = true        # 是否包含 mod_id（对于 JAR 文件）
+mod_version = true   # 是否包含 mod_version（对于 JAR 文件）
+sha256 = true        # 是否计算并包含文件的 SHA256 哈希值

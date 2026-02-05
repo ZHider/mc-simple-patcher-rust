@@ -42,7 +42,7 @@ pub struct GroupConfig {
 }
 
 /// 主配置结构
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Config {
     #[serde(flatten)]
     pub metadata_config: MetadataConfig,
