@@ -1,14 +1,14 @@
 //! 主控制器模块
 //! 协调各个模块的工作
 
-use std::path::{Path, PathBuf};
-use anyhow::{Context, Result};
 use crate::{
-    config::{Config, GroupConfig},
     anchor_finder,
-    file_manager,
-    downloader,
+    config::{Config, GroupConfig},
+    downloader, file_manager,
 };
+use anyhow::{Context, Result};
+use regex::Regex;
+use std::path::{Path, PathBuf};
 
 /// 默认最大递归深度
 const DEFAULT_MAX_DEPTH: usize = 10;
@@ -36,7 +36,7 @@ async fn process_group(group: &GroupConfig) -> Result<()> {
     let anchor_dir = anchor_finder::find_anchor_optimized(
         &group.anchor,
         &std::env::current_dir()?,
-        DEFAULT_MAX_DEPTH
+        DEFAULT_MAX_DEPTH,
     )
     .with_context(|| format!("无法找到锚点: {}", group.anchor))?;
 
@@ -44,7 +44,7 @@ async fn process_group(group: &GroupConfig) -> Result<()> {
         Some(dir) => {
             log::debug!("找到锚点目录: {}", dir.display());
             dir
-        },
+        }
         None => {
             log::warn!("未找到锚点 {}, 跳过此组", group.anchor);
             return Ok(());
@@ -56,7 +56,9 @@ async fn process_group(group: &GroupConfig) -> Result<()> {
     log::info!("工作目录: {}", work_dir.display());
 
     // 获取目录中的现有文件
-    let existing_files = file_manager::get_files_in_dir(&work_dir, group.recursive)?;
+    let pattern = Regex::new(group.pattern.as_deref().unwrap()).unwrap();
+    let existing_files =
+        file_manager::get_files_in_dir(&work_dir, group.recursive, Some(&pattern))?;
     log::debug!("找到 {} 个现有文件", existing_files.len());
 
     // 处理镜像模式
@@ -78,10 +80,10 @@ async fn handle_mirror_mode(existing_files: &[PathBuf], group: &GroupConfig) -> 
     // 检查现有文件是否在配置中列出
     for file_path in existing_files {
         // 检查是否与任何规则匹配
-        let matched = group.files.iter()
-            .any(|file_rule| {
-                file_manager::matches_rule(file_path, file_rule).unwrap_or(false)
-            });
+        let matched = group
+            .files
+            .iter()
+            .any(|file_rule| file_manager::matches_rule(file_path, file_rule).unwrap_or(false));
 
         if !matched {
             // 文件不在配置中，需要处理
@@ -92,7 +94,10 @@ async fn handle_mirror_mode(existing_files: &[PathBuf], group: &GroupConfig) -> 
                 log::info!("已删除文件: {}", file_path.display());
             } else {
                 // 将文件重命名为 .jar.disabled
-                let disabled_path = file_path.with_extension(format!("{}.disabled", file_path.extension().unwrap_or_default().to_string_lossy()));
+                let disabled_path = file_path.with_extension(format!(
+                    "{}.disabled",
+                    file_path.extension().unwrap_or_default().to_string_lossy()
+                ));
                 std::fs::rename(file_path, &disabled_path)
                     .with_context(|| format!("无法重命名文件: {:?}", file_path))?;
                 log::info!("已禁用文件: {}", disabled_path.display());
@@ -111,10 +116,13 @@ async fn sync_files(work_dir: &Path, group: &GroupConfig) -> Result<()> {
         log::debug!("处理第 {} 个文件规则", index + 1);
 
         // 搜索目录中的文件，看是否有匹配的
-        let existing_files = file_manager::get_files_in_dir(work_dir, group.recursive)?;
+        let pattern = Regex::new(group.pattern.as_deref().unwrap()).unwrap();
+        let existing_files =
+            file_manager::get_files_in_dir(work_dir, group.recursive, Some(&pattern))?;
 
         // 检查是否有匹配的活动文件
-        let matched_file = existing_files.iter()
+        let matched_file = existing_files
+            .iter()
             .find(|file_path| file_manager::matches_rule(file_path, file_rule).unwrap_or(false));
 
         if let Some(file_path) = matched_file {
@@ -122,7 +130,7 @@ async fn sync_files(work_dir: &Path, group: &GroupConfig) -> Result<()> {
             // 检查并恢复禁用的文件
             handle_disabled_file(file_path)?;
         } else {
-            log::debug!("未找到匹配的文件，准备下载");
+            log::debug!("未找到匹配的文件……");
             // 没有找到匹配的文件，需要下载
             let file_name = Path::new(&file_rule.url)
                 .file_name()
@@ -160,9 +168,9 @@ fn handle_disabled_file(file_path: &Path) -> Result<bool> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::{Config, GroupConfig, MetadataConfig};
     use std::fs;
     use tempfile::TempDir;
-    use crate::config::{Config, MetadataConfig, GroupConfig};
 
     #[tokio::test]
     async fn test_execute_patch_with_mock_config() -> Result<()> {

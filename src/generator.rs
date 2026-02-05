@@ -30,7 +30,7 @@ pub fn generate_config(
     let pattern_str = pattern.clone();
 
     // 获取目录中的文件
-    let files = file_manager::get_files_in_dir(&dir, recursive)?;
+    let files = file_manager::get_files_in_dir(&dir, recursive, None)?;
 
     // 创建一个临时的 FileRule 用于模式匹配
     let temp_rule = FileRule {

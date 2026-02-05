@@ -23,8 +23,8 @@ pub fn matches_rule(file_path: &Path, rule: &FileRule) -> Result<bool> {
         .ok_or_else(|| anyhow::anyhow!("无法获取文件名: {:?}", file_path))?
         .to_string_lossy();
 
-    // 检查名称是否匹配（包括禁用文件名）
-    let name_matches = check_name_match_or_disabled(&file_name, rule);
+    // 检查名称是否匹配
+    let name_matches = check_name_match(&file_name, rule);
     let pattern_matches = check_pattern_match(&file_name, rule);
 
     // 检查mod信息是否匹配
@@ -46,9 +46,9 @@ pub fn matches_rule(file_path: &Path, rule: &FileRule) -> Result<bool> {
 }
 
 /// 检查文件名是否匹配（包括禁用文件名）
-fn check_name_match_or_disabled(file_name: &str, rule: &FileRule) -> bool {
+fn check_name_match(file_name: &str, rule: &FileRule) -> bool {
     if let Some(ref name) = rule.name {
-        return file_name == name || file_name == format!("{}.disabled", name);
+        return file_name == name;
     }
     true // 如果没有指定 name 字段，则认为匹配
 }
@@ -159,9 +159,10 @@ pub fn extract_mod_info_from_jar(jar_path: &Path) -> Result<(String, String)> {
 
 /// 在ZIP存档中查找mods.toml文件
 fn find_mods_toml_in_archive(archive: &mut ZipArchive<std::fs::File>) -> Result<String> {
-    let mut file = archive.by_name("META-INF/mods.toml")
+    let mut file = archive
+        .by_name("META-INF/mods.toml")
         .map_err(|_| anyhow::anyhow!("JAR 文件中未找到 META-INF/mods.toml"))?;
-    
+
     let mut content = String::new();
     std::io::Read::read_to_string(&mut file, &mut content)?;
     Ok(content)
@@ -172,7 +173,7 @@ pub fn find_disabled_file(file_path: &Path) -> Option<PathBuf> {
     let disabled_path = create_disabled_path(file_path);
 
     if disabled_path.exists() {
-        log::info!("找到对应的 .jar.disabled 文件: {}", disabled_path.display());
+        log::info!("找到对应的 .disabled 文件: {}", disabled_path.display());
         Some(disabled_path)
     } else {
         None
@@ -181,10 +182,10 @@ pub fn find_disabled_file(file_path: &Path) -> Option<PathBuf> {
 
 /// 创建禁用文件的路径
 fn create_disabled_path(file_path: &Path) -> PathBuf {
-    if let Some(file_stem) = file_path.file_stem() {
-        file_path.with_file_name(format!("{}.jar.disabled", file_stem.to_string_lossy()))
+    if let Some(file_name) = file_path.file_name() {
+        file_path.with_file_name(format!("{}.disabled", file_name.to_string_lossy()))
     } else {
-        file_path.with_extension("jar.disabled")
+        file_path.with_extension("disabled")
     }
 }
 
@@ -198,11 +199,32 @@ pub fn restore_disabled_file(disabled_path: &Path) -> Result<PathBuf> {
 }
 
 /// 获取目录中的所有文件
-pub fn get_files_in_dir(dir_path: &Path, recursive: bool) -> Result<Vec<PathBuf>> {
-    if recursive {
+pub fn get_files_in_dir(
+    dir_path: &Path,
+    recursive: bool,
+    rule: Option<&Regex>,
+) -> Result<Vec<PathBuf>> {
+    let files = if recursive {
         get_recursive_files(dir_path)
     } else {
         get_non_recursive_files(dir_path)
+    };
+
+    if let Some(reg) = rule {
+        let files: Vec<PathBuf> = files?
+            .into_iter()
+            .filter(|file| {
+                reg.is_match(
+                    file.file_name()
+                        .unwrap_or_default()
+                        .to_string_lossy()
+                        .as_ref(),
+                )
+            })
+            .collect();
+        Ok(files)
+    } else {
+        files
     }
 }
 

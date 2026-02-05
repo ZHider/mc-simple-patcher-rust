@@ -1,14 +1,14 @@
-use anyhow::Result;
+use anyhow::{Ok, Result};
 use clap::Parser;
 use std::path::PathBuf;
 
-pub mod config;
 pub mod anchor_finder;
-pub mod file_manager;
+pub mod config;
 pub mod downloader;
-pub mod main_controller;
+pub mod file_manager;
 pub mod generator;
 pub mod logger;
+pub mod main_controller;
 pub mod utils;
 
 /// 计算并打印文件的SHA256哈希值
@@ -84,13 +84,10 @@ async fn main() -> Result<()> {
         execute_with_config(&args.config).await
     };
 
-    match &result {
-        Ok(()) => {
-            log::info!("程序执行完成");
-        }
-        Err(e) => {
-            log::error!("程序执行出错: {}", e);
-        }
+    if let Err(e) = &result {
+        log::error!("程序执行出错: {}", e);
+    } else {
+        log::info!("程序执行完成");
     }
 
     // 无论成功还是失败，都等待用户按键退出
@@ -99,12 +96,11 @@ async fn main() -> Result<()> {
     result
 }
 
-
 /// 程序退出前暂停，等待用户按键
 fn pause_before_exit() {
-    use std::io::{stdin, stdout, Write};
+    use std::io::{Write, stdin, stdout};
 
-    print!("\n请按任意键退出...");
+    print!("\n请按任意键...");
     let _ = stdout().flush(); // 确保提示信息立即显示
 
     // 读取一个字符
@@ -114,11 +110,30 @@ fn pause_before_exit() {
     println!(); // 换行
 }
 
+
 /// 解析配置文件并执行补丁
-async fn execute_with_config(config_path: &PathBuf) -> Result<()> {
+async fn execute_with_config(config_path: &std::path::Path) -> Result<()> {
     log::info!("正在解析配置文件: {}", config_path.display());
+    let config = update_metadata_if_needed(config_path).await?;
+    pause_before_exit();
+    main_controller::execute_patch(&config).await
+}
+
+async fn update_metadata_if_needed(
+    config_path: &std::path::Path,
+) -> Result<config::Config> {
     let config = config::parse_config(config_path)
         .map_err(|e| anyhow::anyhow!("解析配置文件失败: {}", e))?;
 
-    main_controller::execute_patch(&config).await
+    let metadata_url = config.metadata_config.metadata.as_ref().unwrap();
+    log::info!("尝试更新元数据: {}", metadata_url);
+
+    if let Err(e) = downloader::download_file(metadata_url, config_path).await {
+        log::error!("更新失败！{}", e);
+        Ok(config)
+    } else {
+        log::info!("元数据文件已更新: {}", config_path.display());
+        // 重新解析配置文件
+        config::parse_config(config_path)
+    }
 }
