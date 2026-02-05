@@ -29,7 +29,7 @@ delete = false
 # 用于指定将什么样的文件对应于该组中
 pattern = '^.+\.jar$'
 
-# 每一个文件规则如果有多个，关系为和（AND）
+# 每一个文件规则如果有多个规则，关系为和（AND）
 [[groups.files]]
 # 如果有 name 字段，则优先使用文件名进行完全匹配
 name = "OreExcavation.jar"
@@ -46,3 +46,13 @@ url = "https://example.com/files/immersiveengineering-1.18.2-8.4.0-161.jar"
 # 如果有 name_pattern 字段，则使用正则表达式进行文件名匹配
 name_pattern = '^lucky_hat-1.0.\d.jar$'
 url = "https://example.com/files/lucky_hat-1.0.2.jar"
+
+[[groups.files]]
+# 如果有 sha256 字段，则使用 sha256 进行匹配
+# 对于远程 metadata（也就是toml）文件，如果服务器存在 filename.sha256 文件，则会检测 sha256 是否一致。
+# 如 http://example.com/metadata.toml.sha256
+# 如果你的服务器支持，也可以通过设置自定义 HTTP Response Header：`x-checksum-sha256` 和 `x-sha256`
+
+# 这里的 name 不是必须的，但 toml 里仍然可以写注释，比 json 好得多不是嘛？
+# name = "tac-0.3.10.1-1.18.2.jar"
+sha256 = "24232e4500aa3385923ad3947bec8443dc4f04c9cf17c2f94521dcfcd3a1bc20"

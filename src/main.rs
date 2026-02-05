@@ -47,7 +47,7 @@ struct Args {
     debug: bool,
 
     /// SHA256模式：计算指定文件的SHA256哈希值
-    #[arg(long)]
+    #[arg(short, long, value_name="FILE")]
     sha256: Option<std::path::PathBuf>,
 }
 

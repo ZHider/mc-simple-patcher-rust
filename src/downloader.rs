@@ -19,7 +19,6 @@ fn get_sha256_from_headers(response: &reqwest::Response) -> Option<String> {
         let digest_str = digest_header.to_str().ok()?;
         // Digest头部通常格式为 "sha-256=:xxx="，其中xxx是base64编码的哈希值
         if digest_str.starts_with("sha-256=") {
-            // 这里我们简化处理，实际应用中可能需要解析base64
             log::debug!("从Digest头部获取到SHA256信息: {}", digest_str);
         }
     }

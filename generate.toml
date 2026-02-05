@@ -2,6 +2,7 @@
 metadata = "http://example.com/metadata.toml"
 
 # 版本号，目前仅作为标识作用
+# 但请不要删除，这是必须的键
 version = 0
 
 [[generate]]

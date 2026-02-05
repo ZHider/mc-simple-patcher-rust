@@ -11,7 +11,7 @@ use anyhow::Result;
 pub fn calculate_file_sha256(file_path: &Path) -> Result<String> {
     let mut file = File::open(file_path)?;
     let mut hasher = Sha256::new();
-    let mut buffer = [0; 65536]; // 64KB buffer
+    let mut buffer = [0; 256 * 1024]; // 256KB buffer
 
     loop {
         let bytes_read = file.read(&mut buffer)?;
