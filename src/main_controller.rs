@@ -38,7 +38,7 @@ async fn process_group(group: &GroupConfig) -> Result<()> {
         &std::env::current_dir()?,
         DEFAULT_MAX_DEPTH,
     )
-    .with_context(|| format!("无法找到锚点: {}", group.anchor))?;
+    .context(format!("无法找到锚点: {}", group.anchor))?;
 
     let anchor_dir = match anchor_dir {
         Some(dir) => {
@@ -57,10 +57,10 @@ async fn process_group(group: &GroupConfig) -> Result<()> {
 
     // 获取目录中的现有文件
     let pattern = if let Some(pattern_str) = &group.pattern {
-        Regex::new(pattern_str).with_context(|| format!("无效的正则表达式: {}", pattern_str))?
+        Regex::new(pattern_str).context(format!("无效的正则表达式: {}", pattern_str))?
     } else {
         // 如果没有指定模式，默认匹配所有文件
-        Regex::new(r".*").with_context(|| "创建默认正则表达式失败".to_string())?
+        Regex::new(r".*").context("创建默认正则表达式失败".to_string())?
     };
     let existing_files =
         file_manager::get_files_in_dir(&work_dir, group.recursive, Some(&pattern))?;
@@ -95,7 +95,7 @@ async fn handle_mirror_mode(existing_files: &[PathBuf], group: &GroupConfig) -> 
             if group.delete {
                 // 删除文件
                 std::fs::remove_file(file_path)
-                    .with_context(|| format!("无法删除文件: {:?}", file_path))?;
+                    .context(format!("无法删除文件: {:?}", file_path))?;
                 log::info!("已删除文件: {}", file_path.display());
             } else {
                 // 将文件重命名为 .jar.disabled
@@ -104,7 +104,7 @@ async fn handle_mirror_mode(existing_files: &[PathBuf], group: &GroupConfig) -> 
                     file_path.extension().unwrap_or_default().to_string_lossy()
                 ));
                 std::fs::rename(file_path, &disabled_path)
-                    .with_context(|| format!("无法重命名文件: {:?}", file_path))?;
+                    .context(format!("无法重命名文件: {:?}", file_path))?;
                 log::info!("已禁用文件: {}", disabled_path.display());
             }
         }
@@ -124,7 +124,7 @@ async fn sync_files(work_dir: &Path, group: &GroupConfig) -> Result<()> {
         let pattern = if let Some(pattern_str) = &group.pattern {
             Some(
                 Regex::new(pattern_str)
-                    .with_context(|| format!("无效的正则表达式: {}", pattern_str))?,
+                    .context(format!("无效的正则表达式: {}", pattern_str))?,
             )
         } else {
             None

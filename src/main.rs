@@ -1,6 +1,8 @@
 use crate::utils::{downloader, logger};
 use anyhow::{Ok, Result};
+use bytes::Bytes;
 use clap::{Parser, Subcommand};
+use hex::ToHex;
 use std::path::PathBuf;
 
 pub mod config;
@@ -15,8 +17,8 @@ fn calculate_and_print_file_sha256(file_path: &std::path::Path) -> Result<()> {
         anyhow::bail!("指定的文件不存在: {:?}", file_path);
     }
 
-    let hash_string = utils::calculate_file_sha256(file_path)?;
-    println!("{}", hash_string);
+    let hash_bytes = utils::calculate_file_sha256(file_path)?;
+    println!("{}", &hash_bytes.encode_hex::<String>());
     Ok(())
 }
 

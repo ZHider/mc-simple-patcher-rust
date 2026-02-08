@@ -2,6 +2,7 @@
 //! 实现从目录扫描结果生成配置文件的功能
 
 use anyhow::Result;
+use hex::ToHex;
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::fs;
@@ -242,8 +243,9 @@ fn create_file_rule(rule: &GenerateRule, file_path: &Path) -> Result<crate::conf
     let sha256 = if rule.sha256 {
         match crate::utils::calculate_file_sha256(file_path) {
             Ok(hash) => {
-                log::debug!("计算文件 {} 的 SHA256: {}", file_path.display(), hash);
-                Some(hash)
+                let hash_str = hash.encode_hex();
+                log::debug!("计算文件 {} 的 SHA256: {}", file_path.display(), hash_str);
+                Some(hash_str)
             }
             Err(e) => {
                 log::warn!("无法计算文件 {} 的 SHA256: {}", file_path.display(), e);

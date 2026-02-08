@@ -2,6 +2,7 @@
 //! 实现文件匹配、同步和管理功能
 
 pub mod anchor_finder;
+pub mod modinfo_cache;
 
 use crate::config::FileRule;
 use anyhow::{Context, Result};
@@ -120,7 +121,16 @@ fn check_mod_info_match_cached(file_path: &Path, rule: &FileRule) -> bool {
 /// 检查文件的SHA256哈希值是否与期望值匹配
 fn check_sha256_match(file_path: &Path, expected_sha256: &str) -> Result<bool> {
     let actual_sha256 = crate::utils::calculate_file_sha256(file_path)?;
-    Ok(actual_sha256.eq_ignore_ascii_case(expected_sha256))
+    
+    // 将16进制字符串解析为[u8; 32]
+    let expected_bytes = hex::decode(expected_sha256)
+        .context("无效的SHA256十六进制字符串")?;
+    
+    if expected_bytes.len() != 32 {
+        anyhow::bail!("SHA256哈希值长度错误，期望32字节，得到{}字节", expected_bytes.len());
+    }
+    
+    Ok(actual_sha256 == expected_bytes)
 }
 
 /// 从 JAR 文件中提取 mod 信息
@@ -195,7 +205,7 @@ fn create_disabled_path(file_path: &Path) -> PathBuf {
 pub fn restore_disabled_file(disabled_path: &Path) -> Result<PathBuf> {
     let restored_path = disabled_path.with_extension("");
     fs::rename(disabled_path, &restored_path)
-        .with_context(|| format!("无法恢复文件: {:?}", disabled_path))?;
+        .context(format!("无法恢复文件: {:?}", disabled_path))?;
     log::info!("已恢复文件: {}", restored_path.display());
     Ok(restored_path)
 }

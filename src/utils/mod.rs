@@ -5,13 +5,14 @@ pub mod downloader;
 pub mod logger;
 
 use anyhow::Result;
+use bytes::Bytes;
 use sha2::{Digest, Sha256};
 use std::fs::File;
 use std::io::Read;
 use std::path::Path;
 
 /// 计算文件的SHA256哈希值
-pub fn calculate_file_sha256(file_path: &Path) -> Result<String> {
+pub fn calculate_file_sha256(file_path: &Path) -> Result<Bytes> {
     let mut file = File::open(file_path)?;
     let mut hasher = Sha256::new();
     let mut buffer = [0; 256 * 1024]; // 256KB buffer
@@ -24,8 +25,8 @@ pub fn calculate_file_sha256(file_path: &Path) -> Result<String> {
         hasher.update(&buffer[..bytes_read]);
     }
 
-    let hash_bytes = hasher.finalize();
-    Ok(format!("{:x}", hash_bytes))
+    let hash_bytes_array: [u8; 32] = hasher.finalize().into();
+    Ok(Bytes::from(Into::<Box<[u8]>>::into(hash_bytes_array)))
 }
 
 #[cfg(test)]
