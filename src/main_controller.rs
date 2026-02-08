@@ -46,7 +46,7 @@ async fn process_group(group: &GroupConfig) -> Result<()> {
             dir
         }
         None => {
-            log::warn!("未找到锚点 {}, 跳过此组", group.anchor);
+            log::error!("未找到锚点 {}, 跳过此组", group.anchor);
             return Ok(());
         }
     };
@@ -55,15 +55,16 @@ async fn process_group(group: &GroupConfig) -> Result<()> {
     let work_dir = anchor_dir.join(&group.root);
     log::info!("工作目录: {}", work_dir.display());
 
-    // 获取目录中的现有文件
-    let pattern = if let Some(pattern_str) = &group.pattern {
-        Regex::new(pattern_str).context(format!("无效的正则表达式: {}", pattern_str))?
-    } else {
-        // 如果没有指定模式，默认匹配所有文件
-        Regex::new(r".*").context("创建默认正则表达式失败".to_string())?
-    };
+    // 获取符合这个组规则的所有现有文件
+    let pattern = group
+        .pattern
+        .as_ref()
+        .map(|pattern_str| {
+            Regex::new(pattern_str).context(format!("无效的正则表达式: {}", pattern_str))
+        })
+        .transpose()?;
     let existing_files =
-        file_manager::get_files_in_dir(&work_dir, group.recursive, Some(&pattern))?;
+        file_manager::get_files_in_dir(&work_dir, group.recursive, pattern.as_ref())?;
     log::debug!("找到 {} 个现有文件", existing_files.len());
 
     // 处理镜像模式
@@ -73,7 +74,7 @@ async fn process_group(group: &GroupConfig) -> Result<()> {
     }
 
     // 处理文件同步
-    sync_files(&work_dir, group).await?;
+    sync_files(&existing_files, group, &work_dir).await?;
 
     Ok(())
 }
@@ -114,23 +115,11 @@ async fn handle_mirror_mode(existing_files: &[PathBuf], group: &GroupConfig) -> 
 }
 
 /// 同步文件
-async fn sync_files(work_dir: &Path, group: &GroupConfig) -> Result<()> {
+async fn sync_files(existing_files: &[PathBuf], group: &GroupConfig, work_dir: &Path) -> Result<()> {
     log::info!("正准备同步 {} 个文件……", group.files.len());
 
     for (index, file_rule) in group.files.iter().enumerate() {
         log::debug!("处理第 {} 个文件规则", index + 1);
-
-        // 搜索目录中的文件，看是否有匹配的
-        let pattern = if let Some(pattern_str) = &group.pattern {
-            Some(
-                Regex::new(pattern_str)
-                    .context(format!("无效的正则表达式: {}", pattern_str))?,
-            )
-        } else {
-            None
-        };
-        let existing_files =
-            file_manager::get_files_in_dir(work_dir, group.recursive, pattern.as_ref())?;
 
         // 检查是否有匹配的活动文件
         let matched_file = existing_files
