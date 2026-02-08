@@ -106,9 +106,9 @@ async fn check_file_integrity(url: &str, dest_path: &Path) -> Result<bool> {
 }
 
 /// 下载文件到指定路径
-pub async fn download_file(url: &str, dest_path: &Path) -> Result<()> {
+pub async fn download_file(url: &str, dest_path: &Path, check_sha256: bool) -> Result<()> {
     // 检查文件是否已存在且完整
-    if check_file_integrity(url, dest_path).await? {
+    if check_sha256 && check_file_integrity(url, dest_path).await? {
         log::info!("跳过下载，文件已是最新版本: {}", dest_path.display());
         return Ok(());
     }
@@ -247,7 +247,7 @@ mod tests {
         let dest_path = temp_dir.path().join("test.txt");
 
         // 测试下载一个简单的网页
-        download_file("https://httpbin.org/get", &dest_path).await?;
+        download_file("https://httpbin.org/get", &dest_path, false).await?;
 
         assert!(dest_path.exists());
         Ok(())

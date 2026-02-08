@@ -1,6 +1,5 @@
 use crate::utils::{downloader, logger};
 use anyhow::{Ok, Result};
-use bytes::Bytes;
 use clap::{Parser, Subcommand};
 use hex::ToHex;
 use std::path::PathBuf;
@@ -117,7 +116,7 @@ async fn update_metadata(config_path: &std::path::Path) -> Result<config::Config
     let metadata_url = config.metadata_config.metadata.as_ref().unwrap();
     log::info!("尝试更新元数据: {}", metadata_url);
 
-    if let Err(e) = downloader::download_file(metadata_url, config_path).await {
+    if let Err(e) = downloader::download_file(metadata_url, config_path, true).await {
         log::error!("更新失败！{}", e);
         Ok(config)
     } else {

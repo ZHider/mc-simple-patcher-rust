@@ -272,7 +272,9 @@ fn create_file_rule(rule: &GenerateRule, file_path: &Path) -> Result<crate::conf
     // 如果需要，提取 mod_id 和 mod_version
     if (rule.mod_id || rule.mod_version) && file_path.extension().is_some_and(|ext| ext == "jar") {
         log::debug!("尝试从 JAR 文件中提取 mod 信息: {}", file_path.display());
-        if let Ok((mod_id, mod_version)) = file_manager::extract_mod_info_from_jar(file_path) {
+        if let Ok((mod_id, mod_version)) =
+            file_manager::modinfo_cache::extract_mod_info_from_jar(file_path)
+        {
             log::debug!(
                 "成功提取 mod 信息: mod_id={}, mod_version={}",
                 mod_id,
