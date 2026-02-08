@@ -1,6 +1,8 @@
 //! 文件管理模块
 //! 实现文件匹配、同步和管理功能
 
+pub mod anchor_finder;
+
 use crate::config::FileRule;
 use anyhow::{Context, Result};
 use regex::Regex;

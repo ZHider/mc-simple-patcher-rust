@@ -18,12 +18,12 @@
 目前拥有的更新方案，有着以下几个不便之处：
 
 1. 更新选择不够灵活
-    对于 `rsync`、`robocopy` 等同步方案，往往只能选中整个文件夹。开启镜像模式后，目标文件夹中不符合源文件夹的文件将被剔除。但有时，我们不需要对整个文件夹进行操作，如 `config` 文件夹中，只需要对某个或某些特定的文件进行更新。
-    对于 `HMCL` 提供的整合包更新功能，需要在整合包发布的时候就写好相关的数据，URL不可变，并非即插即用。
+    - 对于 `rsync`、`robocopy` 等同步方案，往往只能选中整个文件夹。开启镜像模式后，目标文件夹中不符合源文件夹的文件将被剔除。但有时，我们不需- 对整个文件夹进行操作。如 `config` 文件夹中，只需要对某个或某些特定的文件进行更新。
+    - 对于 `HMCL` 提供的整合包更新功能，需要在整合包发布的时候就写好相关的数据，URL不可变，并非即插即用。
 
 2. 对客户端有要求，可能依赖运行环境
-    用户的运行环境上，可能缺少各种运行库，如 `git` `python` `powershell 5/7` 
-    用 Java 对于 Minecraft 用户来说可能是更好的选择，可惜我不会 Java（哭
+    - 用户的运行环境上，可能缺少各种运行库，如 `git` `python` `powershell 5/7` 
+    > 用 Java 对于 Minecraft 用户来说可能是更好的选择，可惜我不会 Java（哭
 
 3. 对服务端有要求，可能需要额外架设服务
 
@@ -49,6 +49,8 @@ cargo run -- <在这里附加参数>
 ```bash
 # 直接双击启动会加载同目录下的 mc_simple_patcher.toml
 mc_simple_patcher.exe
+# 使用debug参数输出更多信息
+mc_simple_patcher.exe -d
 ```
 
 ### CLI Usage
@@ -63,7 +65,7 @@ Commands:
 Options:
   -c, --config <CONFIG>  配置文件路径 [default: mc_simple_patcher.toml]
   -d, --debug            启用调试模式
-      --sha256 <SHA256>  SHA256模式：计算指定文件的SHA256哈希值
+      --sha256 <FILE>    SHA256模式：计算指定文件的SHA256哈希值
   -h, --help             Print help
   -V, --version          Print version
 ```

@@ -46,15 +46,19 @@ impl log::Log for DualLogger {
                 log::Level::Info => {
                     let style = Style::new().green();
                     format!("{}", style.apply_to("[INFO]"))
-                },
+                }
                 log::Level::Debug => {
                     let style = Style::new().yellow();
                     format!("{}", style.apply_to("[DEBUG]"))
-                },
+                }
                 log::Level::Error => {
                     let style = Style::new().red();
                     format!("{}", style.apply_to("[ERROR]"))
-                },
+                }
+                log::Level::Warn => {
+                    let style = Style::new().on_yellow();
+                    format!("{}", style.apply_to("[WARN]"))
+                }
                 _ => format!("[{}]", record.level()),
             };
 
@@ -63,7 +67,13 @@ impl log::Log for DualLogger {
             // 同时写入日志文件
             if let Ok(mut file) = self.file.lock() {
                 let timestamp = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S");
-                let _ = writeln!(file, "[{}] [{}] {}", timestamp, record.level(), record.args());
+                let _ = writeln!(
+                    file,
+                    "[{}] [{}] {}",
+                    timestamp,
+                    record.level(),
+                    record.args()
+                );
             }
         }
     }

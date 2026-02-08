@@ -1,13 +1,11 @@
+use crate::utils::{downloader, logger};
 use anyhow::{Ok, Result};
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
-pub mod anchor_finder;
 pub mod config;
-pub mod downloader;
 pub mod file_manager;
 pub mod generator;
-pub mod logger;
 pub mod main_controller;
 pub mod utils;
 
@@ -47,7 +45,7 @@ struct Args {
     debug: bool,
 
     /// SHA256模式：计算指定文件的SHA256哈希值
-    #[arg(short, long, value_name="FILE")]
+    #[arg(short, long, value_name = "FILE")]
     sha256: Option<std::path::PathBuf>,
 }
 
@@ -102,7 +100,6 @@ fn pause_before_exit() {
     println!(); // 换行
 }
 
-
 /// 解析配置文件并执行补丁
 async fn execute_with_config(config_path: &std::path::Path) -> Result<()> {
     log::info!("正在解析配置文件: {}", config_path.display());
@@ -111,9 +108,7 @@ async fn execute_with_config(config_path: &std::path::Path) -> Result<()> {
     main_controller::execute_patch(&config).await
 }
 
-async fn update_metadata(
-    config_path: &std::path::Path,
-) -> Result<config::Config> {
+async fn update_metadata(config_path: &std::path::Path) -> Result<config::Config> {
     let config = config::parse_config(config_path)
         .map_err(|e| anyhow::anyhow!("解析配置文件失败: {}", e))?;
 

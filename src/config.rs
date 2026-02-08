@@ -1,10 +1,10 @@
 //! 配置文件解析模块
 //! 实现对 TOML 配置文件的解析和验证
 
+use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
-use anyhow::Result;
 
 /// 元数据配置
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -79,15 +79,18 @@ fn validate_config(config: &Config) -> Result<()> {
                 || file_rule.sha256.is_some();
 
             if !has_match_condition {
-                anyhow::bail!("File rule must have at least one match condition (name, mod_id, name_pattern, or sha256)");
+                anyhow::bail!(
+                    "File rule must have at least one match condition (name, mod_id, name_pattern, or sha256)"
+                );
             }
         }
 
         // 如果定义了 pattern 字段，检查其是否为有效的正则表达式
         if let Some(ref pattern) = group.pattern
-            && let Err(e) = regex::Regex::new(pattern) {
-                anyhow::bail!("Invalid regex pattern in group: {}. Error: {}", pattern, e);
-            }
+            && let Err(e) = regex::Regex::new(pattern)
+        {
+            anyhow::bail!("Invalid regex pattern in group: {}. Error: {}", pattern, e);
+        }
     }
 
     Ok(())
@@ -95,7 +98,10 @@ fn validate_config(config: &Config) -> Result<()> {
 
 /// 获取配置中的元数据信息
 pub fn get_metadata_info(config: &Config) -> String {
-    match (&config.metadata_config.metadata, config.metadata_config.version) {
+    match (
+        &config.metadata_config.metadata,
+        config.metadata_config.version,
+    ) {
         (Some(metadata), Some(version)) => format!("{} v{}", metadata, version),
         (Some(metadata), None) => metadata.clone(),
         (None, Some(version)) => format!("Unknown v{}", version),

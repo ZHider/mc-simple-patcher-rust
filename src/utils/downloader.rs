@@ -1,3 +1,4 @@
+use crate::utils;
 use anyhow::{Context, Result};
 use futures_util::StreamExt;
 use reqwest;
@@ -5,11 +6,9 @@ use std::io::Write;
 use std::path::Path;
 use std::time::Instant;
 use tokio::io::AsyncWriteExt;
-use crate::utils;
 
 /// 进度回调类型
 pub type ProgressCallback = dyn Fn(u64, Option<u64>, Instant) -> Result<()> + Send + Sync;
-
 
 /// 从HTTP响应头中尝试获取SHA256哈希值
 fn get_sha256_from_headers(response: &reqwest::Response) -> Option<String> {
@@ -91,11 +90,17 @@ async fn check_file_integrity(url: &str, dest_path: &Path) -> Result<bool> {
             log::info!("文件已是最新版本: {}", dest_path.display());
             Ok(true)
         } else {
-            log::info!("文件已存在但内容不同，需要重新下载: {}", dest_path.display());
+            log::info!(
+                "文件已存在但内容不同，需要重新下载: {}",
+                dest_path.display()
+            );
             Ok(false)
         }
     } else {
-        log::info!("服务器未提供SHA256哈希值，跳过完整性检查: {}", dest_path.display());
+        log::info!(
+            "服务器未提供SHA256哈希值，跳过完整性检查: {}",
+            dest_path.display()
+        );
         Ok(false)
     }
 }
@@ -286,11 +291,14 @@ mod tests {
     fn test_calculate_file_sha256() -> Result<()> {
         let temp_dir = TempDir::new()?;
         let test_file = temp_dir.path().join("test_hash.txt");
-        std::fs::write(&test_file, "hello world")?;  // Just "hello world" without newline
+        std::fs::write(&test_file, "hello world")?; // Just "hello world" without newline
 
         let hash = utils::calculate_file_sha256(&test_file)?;
         // SHA256 of "hello world" is b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9
-        assert_eq!(hash, "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9");
+        assert_eq!(
+            hash,
+            "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9"
+        );
 
         Ok(())
     }

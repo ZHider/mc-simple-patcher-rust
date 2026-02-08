@@ -2,9 +2,9 @@
 //! 协调各个模块的工作
 
 use crate::{
-    anchor_finder,
     config::{Config, GroupConfig},
-    downloader, file_manager,
+    file_manager::{self, anchor_finder},
+    utils::downloader,
 };
 use anyhow::{Context, Result};
 use regex::Regex;
@@ -122,13 +122,15 @@ async fn sync_files(work_dir: &Path, group: &GroupConfig) -> Result<()> {
 
         // 搜索目录中的文件，看是否有匹配的
         let pattern = if let Some(pattern_str) = &group.pattern {
-            Regex::new(pattern_str).with_context(|| format!("无效的正则表达式: {}", pattern_str))?
+            Some(
+                Regex::new(pattern_str)
+                    .with_context(|| format!("无效的正则表达式: {}", pattern_str))?,
+            )
         } else {
-            // 如果没有指定模式，默认匹配所有文件
-            Regex::new(r".*").with_context(|| "创建默认正则表达式失败".to_string())?
+            None
         };
         let existing_files =
-            file_manager::get_files_in_dir(work_dir, group.recursive, Some(&pattern))?;
+            file_manager::get_files_in_dir(work_dir, group.recursive, pattern.as_ref())?;
 
         // 检查是否有匹配的活动文件
         let matched_file = existing_files
@@ -136,7 +138,7 @@ async fn sync_files(work_dir: &Path, group: &GroupConfig) -> Result<()> {
             .find(|file_path| file_manager::matches_rule(file_path, file_rule).unwrap_or(false));
 
         if let Some(file_path) = matched_file {
-            log::debug!("找到匹配的文件: {}", file_path.display());
+            log::info!("找到匹配的文件: {}", file_path.display());
             // 检查并恢复禁用的文件
             handle_disabled_file(file_path)?;
         } else {
