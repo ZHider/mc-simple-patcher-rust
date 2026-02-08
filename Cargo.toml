@@ -10,10 +10,13 @@ chrono = "0.4.43"
 clap = { version = "4.5.57", features = ["derive"] }
 console = "0.16.2"
 env_logger = "0.11.8"
+futures = "0.3.31"
 futures-util = "0.3.31"
 hex = "0.4.3"
 lazy_static = "1.5.0"
 log = "0.4.29"
+pbr = "1.1.1"
+rayon = "1.11.0"
 regex = "1.12.3"
 reqwest = { version = "0.13.1", features = ["blocking", "stream"] }
 serde = { version = "1.0.228", features = ["derive"] }

@@ -13,6 +13,8 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use rayon::prelude::*;
+
 /// 默认最大递归深度
 const DEFAULT_MAX_DEPTH: usize = 10;
 
@@ -72,7 +74,7 @@ async fn process_group(group: &GroupConfig) -> Result<()> {
 
     log::info!("开始提取现有文件信息……");
     let modinfo_cache = file_manager::modinfo_cache::extract_modinfo(
-        existing_files.iter(),
+        existing_files.par_iter(),
         Some(existing_files.len()),
     )
     .context("构建MOD信息缓存时出错……这个真的是实际存在的错误吗？")?;
