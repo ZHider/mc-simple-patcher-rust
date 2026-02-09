@@ -57,6 +57,9 @@ async fn main() -> Result<()> {
     // 初始化日志系统
     logger::init_logger(args.debug)?;
 
+    // 初始化tokio运行时
+    utils::downloader::init_tokio_runtime();
+
     log::info!("Minecraft 简易补丁工具启动");
 
     let result = match args.command {

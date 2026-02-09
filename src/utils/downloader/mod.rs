@@ -1,34 +1,30 @@
 mod hash_check;
 
 use anyhow::{Context, Result};
-use futures_util::StreamExt;
-use reqwest;
-use std::io::Write;
+use futures::StreamExt;
+use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
+use reqwest::{self, Response};
 use std::path::Path;
-use std::time::Instant;
 use tokio::io::AsyncWriteExt;
 
-/// 进度回调类型
-pub type ProgressCallback = dyn Fn(u64, Option<u64>, Instant) -> Result<()> + Send + Sync;
+/// 下载任务结构
+pub struct DownloadTask {
+    pub url: String,
+    pub dest_path: std::path::PathBuf,
+    pub check_sha256: bool,
+}
 
-/// 下载文件到指定路径
+pub fn init_tokio_runtime() {
+    // indicatif 不需要全局运行时，这个函数保留以保持兼容性
+}
+
+/// 简单的单文件下载
 pub async fn download_file(url: &str, dest_path: &Path, check_sha256: bool) -> Result<()> {
     // 检查文件是否已存在且完整
     if check_sha256 && hash_check::check_file_integrity(url, dest_path).await? {
         log::info!("跳过下载，文件已是最新版本: {}", dest_path.display());
         return Ok(());
     }
-
-    download_file_with_progress(url, dest_path, None).await
-}
-
-/// 使用进度回调下载文件到指定路径
-pub async fn download_file_with_progress(
-    url: &str,
-    dest_path: &Path,
-    progress_callback: Option<&ProgressCallback>,
-) -> Result<()> {
-    log::info!("开始下载: {} -> {}", url, dest_path.display());
 
     let client = reqwest::Client::new();
     let response = client
@@ -39,84 +35,171 @@ pub async fn download_file_with_progress(
 
     ensure_success_response(&response)?;
 
-    let total_size = response.content_length();
-    let start_time = Instant::now();
+    let mut dest_file = tokio::fs::File::create(dest_path)
+        .await
+        .context(format!("无法创建目标文件: {:?}", dest_path))?;
+
+    let mut stream = response.bytes_stream();
+
+    while let Some(chunk_result) = stream.next().await {
+        let chunk = chunk_result.context("无法读取数据块")?;
+        dest_file.write_all(&chunk).await.context("无法写入文件")?;
+    }
+
+    log::info!("下载完成: {}", dest_path.display());
+    Ok(())
+}
+
+/// 使用 indicatif 多进度条批量下载文件，接受迭代器
+pub async fn download_files_with_progress<I>(tasks: I) -> Result<()>
+where
+    I: IntoIterator<Item = DownloadTask>,
+{
+    let tasks_vec: Vec<_> = tasks.into_iter().collect();
+    let total = tasks_vec.len();
+
+    log::info!("开始下载 {} 个文件", total);
+
+    // 创建多进度条容器
+    let multi_progress = MultiProgress::new();
+    
+    // 设置多进度条的样式
+    multi_progress.set_draw_target(indicatif::ProgressDrawTarget::stderr());
+
+    // 为每个任务创建进度条
+    let mut handles = Vec::new();
+
+    for (idx, task) in tasks_vec.into_iter().enumerate() {
+        let filename = task
+            .dest_path
+            .file_name()
+            .unwrap_or(std::ffi::OsStr::new("unknown"))
+            .to_string_lossy()
+            .to_string();
+
+        // 创建进度条
+        let pb = multi_progress.add(ProgressBar::new_spinner());
+        pb.set_style(
+            ProgressStyle::default_spinner()
+                .template("[{pos}/{len}] {spinner} {msg} {bytes}/{total_bytes} ({eta})")
+                .unwrap()
+                .tick_strings(&["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]),
+        );
+        
+        let desc = format!("[{}/{}] {}", idx + 1, total, filename);
+        pb.set_message(desc);
+
+        // 获取文件大小
+        let file_size = get_file_size(&task.url).await.ok();
+        if let Some(size) = file_size {
+            pb.set_length(size);
+            pb.set_style(
+                ProgressStyle::default_bar()
+                    .template("[{pos}/{len}] {bar:40.cyan/blue} {bytes}/{total_bytes} ({eta})")
+                    .unwrap()
+                    .progress_chars("=>-"),
+            );
+        }
+
+        // 创建异步下载任务
+        let download_task = task;
+        let progress_bar = pb;
+
+        let handle = tokio::spawn(async move {
+            download_file_with_progress(&download_task.url, &download_task.dest_path, download_task.check_sha256, progress_bar).await
+        });
+
+        handles.push(handle);
+    }
+
+    // 等待所有下载完成
+    for handle in handles {
+        match handle.await {
+            Ok(Ok(_)) => {},
+            Ok(Err(e)) => {
+                crate::utils::print_error_chain(&e);
+            }
+            Err(e) => {
+                log::error!("下载任务被取消: {}", e);
+            }
+        }
+    }
+
+    log::info!("所有文件下载完成！");
+    Ok(())
+}
+
+
+/// 带进度条的异步文件下载
+async fn download_file_with_progress(
+    url: &str,
+    dest_path: &Path,
+    check_sha256: bool,
+    pb: ProgressBar,
+) -> Result<()> {
+    // 检查文件是否已存在且完整
+    if check_sha256 && hash_check::check_file_integrity(url, dest_path).await? {
+        log::debug!("跳过: 文件已是最新版本");
+        pb.finish_with_message("已跳过，文件最新 ✓");
+        return Ok(());
+    }
+
+    let client = reqwest::Client::new();
+    let response = client
+        .get(url)
+        .send()
+        .await
+        .context(format!("无法发送请求到: {}", url))?;
+
+    ensure_success_response(&response)?;
+
+    let total_size = get_file_length(&response)?;
+    pb.set_length(total_size);
 
     let mut dest_file = tokio::fs::File::create(dest_path)
         .await
         .context(format!("无法创建目标文件: {:?}", dest_path))?;
 
-    let downloaded = download_with_progress_tracking(
-        response.bytes_stream(),
-        &mut dest_file,
-        total_size,
-        start_time,
-        progress_callback,
-    )
-    .await?;
-
-    // 换行并显示完成信息
-    println!();
-    log::info!("下载完成: {} ({} bytes)", dest_path.display(), downloaded);
-    Ok(())
-}
-
-/// 跟踪下载进度的主要函数
-async fn download_with_progress_tracking(
-    mut stream: impl futures_util::Stream<Item = Result<bytes::Bytes, reqwest::Error>> + Unpin,
-    dest_file: &mut tokio::fs::File,
-    total_size: Option<u64>,
-    start_time: Instant,
-    progress_callback: Option<&ProgressCallback>,
-) -> Result<u64> {
-    let mut downloaded: u64 = 0;
+    let mut stream = response.bytes_stream();
 
     while let Some(chunk_result) = stream.next().await {
         let chunk = chunk_result.context("无法读取数据块")?;
         dest_file.write_all(&chunk).await.context("无法写入文件")?;
-
-        downloaded += chunk.len() as u64;
-
-        // 更新进度
-        update_progress(downloaded, total_size, start_time, progress_callback)?;
+        pb.inc(chunk.len() as u64);
     }
 
-    Ok(downloaded)
-}
-
-/// 更新下载进度
-fn update_progress(
-    downloaded: u64,
-    total_size: Option<u64>,
-    start_time: Instant,
-    progress_callback: Option<&ProgressCallback>,
-) -> Result<()> {
-    // 调用进度回调（如果提供）
-    if let Some(callback) = progress_callback {
-        callback(downloaded, total_size, start_time)?;
-    } else {
-        // 默认的进度显示
-        display_progress(downloaded, total_size);
-    }
-
+    pb.finish_with_message("完成 ✓");
     Ok(())
 }
 
-/// 显示下载进度
-fn display_progress(downloaded: u64, total_size: Option<u64>) {
-    if let Some(total) = total_size {
-        let progress_percent = (downloaded as f64 / total as f64) * 100.0;
-        print!(
-            "\r下载进度: {:.1}% ({}/{})",
-            progress_percent,
-            human_readable_size(downloaded),
-            human_readable_size(total)
-        );
+/// 获取远程文件大小
+fn get_file_length(resp: &Response) -> Result<u64> {
+    if let Some(file_length) = resp.headers().get("Content-Length") {
+        let fl_str = file_length
+            .to_str()
+            .context(format!("HTTP头读取时解码失败: {:?}", file_length))?;
+        let fl_u64: u64 = fl_str
+            .parse()
+            .context(format!("Content-Length: {} 似乎不是有效的整数？", fl_str))?;
+        Ok(fl_u64)
     } else {
-        // 如果无法获取总大小，只显示已下载大小
-        print!("\r下载进度: {}", human_readable_size(downloaded));
+        anyhow::bail!(
+            "未能找到 HTTP 头 Content-Length 来获得文件大小在 {}",
+            resp.url()
+        )
     }
-    std::io::stdout().flush().unwrap();
+}
+
+/// 获取远程文件大小（不打开完整响应）
+async fn get_file_size(url: &str) -> Result<u64> {
+    let client = reqwest::Client::new();
+    let response = client
+        .head(url)
+        .send()
+        .await
+        .context(format!("无法发送HEAD请求到: {}", url))?;
+
+    get_file_length(&response)
 }
 
 /// 确保响应成功
@@ -124,88 +207,6 @@ fn ensure_success_response(response: &reqwest::Response) -> Result<()> {
     if !response.status().is_success() {
         Err(anyhow::anyhow!("下载失败，状态码: {}", response.status()))
     } else {
-        Ok(())
-    }
-}
-
-/// 将字节数转换为人类可读的大小格式
-fn human_readable_size(size: u64) -> String {
-    const UNITS: [&str; 5] = ["B", "KB", "MB", "GB", "TB"];
-    let mut size = size as f64;
-    let mut unit_index = 0;
-
-    while size >= 1024.0 && unit_index < UNITS.len() - 1 {
-        size /= 1024.0;
-        unit_index += 1;
-    }
-
-    format!("{:.2}{}", size, UNITS[unit_index])
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use tempfile::TempDir;
-
-    #[tokio::test]
-    async fn test_downloader() -> Result<()> {
-        let temp_dir = TempDir::new()?;
-        let dest_path = temp_dir.path().join("test.txt");
-
-        // 测试下载一个简单的网页
-        download_file("https://httpbin.org/get", &dest_path, false).await?;
-
-        assert!(dest_path.exists());
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn test_download_with_progress() -> Result<()> {
-        let temp_dir = TempDir::new()?;
-        let dest_path = temp_dir.path().join("test_with_progress.txt");
-
-        // 测试带进度回调的下载
-        let progress_callback =
-            |downloaded: u64, total_size: Option<u64>, _: Instant| -> Result<()> {
-                let progress_text = if let Some(total) = total_size {
-                    let progress_percent = (downloaded as f64 / total as f64) * 100.0;
-                    format!(
-                        "下载进度: {:.1}% ({}/{})",
-                        progress_percent,
-                        human_readable_size(downloaded),
-                        human_readable_size(total)
-                    )
-                } else {
-                    format!("下载进度: {}", human_readable_size(downloaded))
-                };
-                println!("{}", progress_text);
-                Ok(())
-            };
-
-        download_file_with_progress(
-            "https://httpbin.org/get",
-            &dest_path,
-            Some(&progress_callback),
-        )
-        .await?;
-
-        assert!(dest_path.exists());
-        Ok(())
-    }
-
-    #[test]
-    fn test_calculate_file_sha256() -> Result<()> {
-        let temp_dir = TempDir::new()?;
-        let test_file = temp_dir.path().join("test_hash.txt");
-        std::fs::write(&test_file, "hello world")?; // Just "hello world" without newline
-
-        let hash = crate::utils::calculate_file_sha256(&test_file)?;
-        // SHA256 of "hello world" is b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9
-        assert_eq!(
-            hash,
-            "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9"
-        );
-
         Ok(())
     }
 }

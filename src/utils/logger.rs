@@ -39,6 +39,11 @@ impl log::Log for DualLogger {
     }
 
     fn log(&self, record: &Record) {
+        if let Some(mp) = record.module_path()
+            && mp == "reqwest::connect"
+        {
+            return;
+        }
         if self.enabled(record.metadata()) {
             use console::Style;
 
@@ -63,7 +68,12 @@ impl log::Log for DualLogger {
                 _ => format!("[{}]", record.level()),
             };
 
-            println!("{} {}", level_tag, record.args());
+            println!(
+                "{} {}",
+                // record.module_path().unwrap_or(""),
+                level_tag,
+                record.args()
+            );
 
             // 同时写入日志文件
             if let Ok(mut file) = self.file.lock() {

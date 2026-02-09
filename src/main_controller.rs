@@ -4,7 +4,7 @@
 use crate::{
     config::{Config, GroupConfig},
     file_manager::{self, anchor_finder, modinfo_cache::ModInfoCache},
-    utils::downloader,
+    utils::downloader::{DownloadTask, download_files_with_progress},
 };
 use anyhow::{Context, Result};
 use regex::Regex;
@@ -154,6 +154,8 @@ async fn sync_files(
 ) -> Result<()> {
     log::info!("正准备同步 {} 个文件……", group.files.len());
 
+    let mut files_needs_download: Vec<DownloadTask> = Vec::new();
+
     for (index, file_rule) in group.files.iter().enumerate() {
         log::debug!("处理第 {} 个文件规则", index + 1);
 
@@ -175,31 +177,40 @@ async fn sync_files(
         } else {
             log::debug!("未找到匹配的文件……");
             // 没有找到匹配的文件，需要下载
-            download_missing_file(work_dir, file_rule).await?;
+            if let Some(task) = build_file_downloadinfo(work_dir, file_rule).await? {
+                files_needs_download.push(task);
+            }
         }
     }
+    download_files_with_progress(files_needs_download.into_iter())
+        .await
+        .context("批量下载文件时出错……")?;
 
     Ok(())
 }
 
-async fn download_missing_file(
+async fn build_file_downloadinfo(
     work_dir: &Path,
     file_rule: &crate::config::FileRule,
-) -> Result<(), anyhow::Error> {
+) -> Result<Option<DownloadTask>, anyhow::Error> {
     let file_name = Path::new(&file_rule.url)
         .file_name()
         .context(format!("无法从URL中提取文件名: {}", file_rule.url))?
         .to_string_lossy()
         .to_string();
     let dest_path = work_dir.join(&file_name);
-    let _: () = if handle_disabled_file(&dest_path)? {
+    if handle_disabled_file(&dest_path)? {
         // 文件已从禁用状态恢复，无需下载
+        Ok(None)
     } else {
-        log::info!("下载文件: {}", file_rule.url);
+        // log::info!("下载文件: {}", file_rule.url);
         // 下载文件
-        downloader::download_file(&file_rule.url, &dest_path, false).await?;
-    };
-    Ok(())
+        Ok(Some(DownloadTask {
+            url: file_rule.url.clone(),
+            dest_path,
+            check_sha256: false,
+        }))
+    }
 }
 
 /// 检查并恢复禁用的文件

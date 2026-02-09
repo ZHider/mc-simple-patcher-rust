@@ -2,11 +2,10 @@ use crate::utils::calculate_file_sha256;
 
 use anyhow::{Context, Result};
 use bytes::Bytes;
-use pbr::ProgressBar;
+use indicatif::ProgressBar;
 use rayon::iter::ParallelIterator;
 use std::{
     collections::{HashMap, HashSet},
-    io::Stdout,
     path::Path,
     sync::{Arc, Mutex},
 };
@@ -100,21 +99,24 @@ fn extract_file_info(progress: &ExtractProgressTracker, file: &Path) -> ModInfo 
 }
 
 pub struct ExtractProgressTracker {
-    pub pb: Mutex<ProgressBar<Stdout>>,
+    pub pb: Mutex<ProgressBar>,
 }
 impl ExtractProgressTracker {
     pub fn new(total: usize) -> Self {
-        let mut pb = ProgressBar::new(total as u64);
-        pb.message("文件信息提取中: ");
-        pb.show_time_left = false;
-        pb.show_speed = false;
-        pb.set_width(Some(80));
+        let pb = ProgressBar::new(total as u64);
+        pb.set_style(
+            indicatif::ProgressStyle::default_bar()
+                .template("[{bar:40.cyan/blue}] {pos}/{len} ({percent}%) {msg}")
+                .unwrap()
+                .progress_chars("=>-"),
+        );
+        pb.set_message("文件信息提取中: ");
         Self { pb: Mutex::new(pb) }
     }
 
     pub fn update(&self) {
-        let mut guard = self.pb.lock().unwrap();
-        guard.inc();
+        let guard = self.pb.lock().unwrap();
+        guard.inc(1);
     }
 }
 
