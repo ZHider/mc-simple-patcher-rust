@@ -4,7 +4,7 @@
 pub mod downloader;
 pub mod logger;
 
-use anyhow::Result;
+use anyhow::{Error, Result};
 use bytes::Bytes;
 use sha2::{Digest, Sha256};
 use std::fs::File;
@@ -51,4 +51,16 @@ mod tests {
         assert_eq!(actual_hash, expected_hash);
         Ok(())
     }
+}
+
+/// 打印完整的错误信息和错误链
+pub fn print_error_chain(err: &Error) {
+    println!("=== 错误信息 ===");
+    println!("主要错误：{}", err);
+    
+    eprintln!("\n=== 错误链（Caused by）===");
+    for (i, cause) in err.chain().enumerate() {
+        eprintln!("  原因 {}: {}", i + 1, cause);
+    }
+    println!("\n{}\n", "-".repeat(50));
 }

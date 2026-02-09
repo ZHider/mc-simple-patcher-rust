@@ -1,5 +1,5 @@
 use crate::utils::{downloader, logger};
-use anyhow::{Ok, Result};
+use anyhow::{Context, Ok, Result};
 use clap::{Parser, Subcommand};
 use hex::ToHex;
 use std::path::PathBuf;
@@ -76,7 +76,8 @@ async fn main() -> Result<()> {
     };
 
     if let Err(e) = &result {
-        log::error!("程序执行出错: {}", e);
+        // 打印完整的错误链
+        utils::print_error_chain(e);
     } else {
         log::info!("程序执行完成");
     }
@@ -111,7 +112,7 @@ async fn execute_with_config(config_path: &std::path::Path) -> Result<()> {
 
 async fn update_metadata(config_path: &std::path::Path) -> Result<config::Config> {
     let config = config::parse_config(config_path)
-        .map_err(|e| anyhow::anyhow!("解析配置文件失败: {}", e))?;
+        .with_context(|| format!("解析配置文件失败: {}", config_path.display()))?;
 
     let metadata_url = config.metadata_config.metadata.as_ref().unwrap();
     log::info!("尝试更新元数据: {}", metadata_url);

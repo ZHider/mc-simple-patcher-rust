@@ -1,7 +1,7 @@
 //! 配置生成模块
 //! 实现从目录扫描结果生成配置文件的功能
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use hex::ToHex;
 use serde::Deserialize;
 use std::collections::HashMap;
@@ -75,9 +75,10 @@ pub async fn generate_config_from_toml(toml_file: PathBuf) -> Result<()> {
 /// 加载生成配置
 fn load_generate_config(toml_file: &Path) -> Result<HashMap<String, serde_json::Value>> {
     let generate_rules_str = fs::read_to_string(toml_file)
-        .map_err(|e| anyhow::anyhow!("读取生成规则文件失败: {}", e))?;
+        .context(format!("读取生成规则文件失败: {}", toml_file.display()))?;
 
-    toml::from_str(&generate_rules_str).map_err(|e| anyhow::anyhow!("解析生成规则文件失败: {}", e))
+    toml::from_str(&generate_rules_str)
+        .context(format!("解析生成规则文件失败: {}", toml_file.display()))
 }
 
 /// 提取生成规则列表
@@ -90,13 +91,10 @@ fn extract_generate_rules(
         .ok_or_else(|| anyhow::anyhow!("生成规则文件中缺少 generate 数组"))?
         .iter()
         .map(|v| {
-            let rule_map = v
-                .as_object()
-                .ok_or_else(|| anyhow::anyhow!("生成规则必须是表格格式"))?;
+            let rule_map = v.as_object().context("生成规则必须是 Table")?;
 
-            let rule_toml = toml::to_string(rule_map)
-                .map_err(|e| anyhow::anyhow!("转换生成规则失败: {}", e))?;
-            toml::from_str(&rule_toml).map_err(|e| anyhow::anyhow!("解析生成规则失败: {}", e))
+            let rule_toml = toml::to_string(rule_map).context("转换生成规则失败")?;
+            toml::from_str(&rule_toml).context("解析生成规则失败")
         })
         .collect()
 }
@@ -182,7 +180,7 @@ async fn process_generate_rule(rule: &GenerateRule) -> Result<Option<crate::conf
 
     // 使用 file_manager 中的函数扫描目录
     let regex_pattern =
-        regex::Regex::new(&rule.pattern).map_err(|e| anyhow::anyhow!("无效的正则表达式: {}", e))?;
+        regex::Regex::new(&rule.pattern).context(format!("无效的正则表达式: {}", rule.pattern))?;
 
     let files = file_manager::get_files_in_dir(&work_dir, rule.recursive, Some(&regex_pattern))?;
     log::info!("找到 {} 个匹配的文件", files.len());
@@ -308,11 +306,10 @@ fn write_generated_config(base_config: &Config, toml_file: &Path) -> Result<()> 
 
     // 将配置写入文件
     log::info!("正在序列化配置并写入文件: {}", output_path.display());
-    let config_content = toml::to_string_pretty(base_config)
-        .map_err(|e| anyhow::anyhow!("序列化配置失败: {}", e))?;
+    let config_content = toml::to_string_pretty(base_config)?;
 
     fs::write(&output_path, config_content)
-        .map_err(|e| anyhow::anyhow!("写入配置文件失败: {}", e))?;
+        .context(format!("写入配置文件失败: {}", output_path.display()))?;
 
     log::info!("配置文件已生成: {}", output_path.display());
 

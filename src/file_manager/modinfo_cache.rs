@@ -156,7 +156,7 @@ pub fn extract_mod_info_from_jar(jar_path: &Path) -> Result<(String, String)> {
 fn find_mods_toml_in_archive(archive: &mut ZipArchive<std::fs::File>) -> Result<String> {
     let mut file = archive
         .by_name("META-INF/mods.toml")
-        .map_err(|_| anyhow::anyhow!("JAR 文件中未找到 META-INF/mods.toml"))?;
+        .context("JAR 文件中未找到 META-INF/mods.toml")?;
 
     let mut content = String::new();
     std::io::Read::read_to_string(&mut file, &mut content)?;

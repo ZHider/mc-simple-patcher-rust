@@ -1,7 +1,7 @@
 //! 日志系统模块
 //! 实现应用程序的日志记录功能
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use log::{Metadata, Record};
 use std::fs::OpenOptions;
 use std::io::Write;
@@ -92,7 +92,7 @@ pub fn init_logger(debug: bool) -> Result<()> {
 
     log::set_boxed_logger(Box::new(logger))
         .map(|()| log::set_max_level(log::LevelFilter::Debug))
-        .map_err(|e| anyhow::anyhow!("Failed to initialize logger: {}", e))?;
+        .with_context(|| "Failed to initialize logger")?;
 
     log::info!("Logger initialized");
     Ok(())
