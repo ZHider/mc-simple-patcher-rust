@@ -1,11 +1,18 @@
 mod hash_check;
+mod progress;
+mod helpers;
 
 use anyhow::{Context, Result};
-use futures::StreamExt;
-use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
-use reqwest::{self, Response};
+use futures::{StreamExt, TryStreamExt, AsyncReadExt};
+use indicatif::ProgressBar;
+use progress::{create_progress_bar, setup_multi_progress, spawn_progress_updater};
+use reqwest::{self};
+use helpers::{get_file_length, get_file_size, ensure_success_response};
+use std::io::{Error, ErrorKind};
 use std::path::Path;
+// Duration not needed here; kept in progress.rs
 use tokio::io::AsyncWriteExt;
+use tokio::sync::mpsc;
 
 /// 下载任务结构
 pub struct DownloadTask {
@@ -60,11 +67,7 @@ where
 
     log::info!("开始下载 {} 个文件", total);
 
-    // 创建多进度条容器
-    let multi_progress = MultiProgress::new();
-    
-    // 设置多进度条的样式
-    multi_progress.set_draw_target(indicatif::ProgressDrawTarget::stderr());
+    let multi_progress = setup_multi_progress();
 
     // 为每个任务创建进度条
     let mut handles = Vec::new();
@@ -77,36 +80,23 @@ where
             .to_string_lossy()
             .to_string();
 
-        // 创建进度条
-        let pb = multi_progress.add(ProgressBar::new_spinner());
-        pb.set_style(
-            ProgressStyle::default_spinner()
-                .template("[{pos}/{len}] {spinner} {msg} {bytes}/{total_bytes} ({eta})")
-                .unwrap()
-                .tick_strings(&["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]),
-        );
-        
-        let desc = format!("[{}/{}] {}", idx + 1, total, filename);
-        pb.set_message(desc);
-
         // 获取文件大小
         let file_size = get_file_size(&task.url).await.ok();
-        if let Some(size) = file_size {
-            pb.set_length(size);
-            pb.set_style(
-                ProgressStyle::default_bar()
-                    .template("[{pos}/{len}] {bar:40.cyan/blue} {bytes}/{total_bytes} ({eta})")
-                    .unwrap()
-                    .progress_chars("=>-"),
-            );
-        }
+
+        // 创建进度条
+        let progress_bar = create_progress_bar(&multi_progress, file_size, idx, total, &filename);
 
         // 创建异步下载任务
         let download_task = task;
-        let progress_bar = pb;
 
         let handle = tokio::spawn(async move {
-            download_file_with_progress(&download_task.url, &download_task.dest_path, download_task.check_sha256, progress_bar).await
+            download_file_with_progress(
+                &download_task.url,
+                &download_task.dest_path,
+                download_task.check_sha256,
+                progress_bar,
+            )
+            .await
         });
 
         handles.push(handle);
@@ -130,17 +120,20 @@ where
 }
 
 
-/// 带进度条的异步文件下载
+/// 带进度条的异步文件下载（支持长文件名滚动显示）
 async fn download_file_with_progress(
     url: &str,
     dest_path: &Path,
     check_sha256: bool,
     pb: ProgressBar,
 ) -> Result<()> {
+    let prefix = extract_prefix_from_pb(&pb);
+    let full_filename = extract_full_filename(dest_path);
+
     // 检查文件是否已存在且完整
     if check_sha256 && hash_check::check_file_integrity(url, dest_path).await? {
         log::debug!("跳过: 文件已是最新版本");
-        pb.finish_with_message("已跳过，文件最新 ✓");
+        pb.finish_with_message(format!("{}✓ 已跳过", prefix));
         return Ok(());
     }
 
@@ -160,53 +153,74 @@ async fn download_file_with_progress(
         .await
         .context(format!("无法创建目标文件: {:?}", dest_path))?;
 
-    let mut stream = response.bytes_stream();
+    // 辅助函数：提取前缀和文件名用的小函数在文件底部实现
 
-    while let Some(chunk_result) = stream.next().await {
-        let chunk = chunk_result.context("无法读取数据块")?;
-        dest_file.write_all(&chunk).await.context("无法写入文件")?;
-        pb.inc(chunk.len() as u64);
+    // ====================== 关键修复部分 ======================
+    // 将流转换为 AsyncRead，然后把下载与进度更新拆分成两个任务：
+    //  - 下载任务：负责从网络读取并写入磁盘，同时把已读取的字节数发送到通道
+    //  - 更新任务：独立运行，接收字节数并以固定频率更新进度条和滚动文本
+    // 这样能保证进度条以稳定的频率刷新，不受网络 I/O 阻塞影响。
+    let mut response_body = response
+        .bytes_stream()
+        // 将reqwest::Error转为std::io::Error（核心修复）
+        .map_err(|e| Error::new(ErrorKind::Other, format!("reqwest error: {}", e)))
+        .into_async_read();
+
+    // 通道用于在下载任务与更新任务之间传递已下载字节数
+    let (tx, rx) = mpsc::channel::<u64>(128);
+
+    // 克隆用于 updater 的状态
+    let pb_updater = pb.clone();
+    let full_name_updater = full_filename.clone();
+    let prefix_updater = prefix.clone();
+    let total_size_updater = total_size;
+
+    // 更新任务：定期刷新进度和滚动文本，传入接收端
+    let updater_handle = spawn_progress_updater(pb_updater, full_name_updater, prefix_updater, total_size_updater, rx);
+
+    // 下载任务：读取网络数据并写入文件，同时把已读字节数发送给更新任务
+    let mut buffer = vec![0u8; 4096];
+    loop {
+        match response_body.read(&mut buffer).await {
+            Ok(n) if n > 0 => {
+                dest_file.write_all(&buffer[..n]).await.context("写入文件失败")?;
+                let chunk_len = n as u64;
+                // 发送到更新任务；若接收方已关闭则忽略错误
+                let _ = tx.send(chunk_len).await;
+            }
+            Ok(0) => break,
+            Err(e) if e.kind() != ErrorKind::Interrupted => {
+                return Err(e).context("读取响应体失败");
+            }
+            _ => continue,
+        }
     }
 
-    pb.finish_with_message("完成 ✓");
+    dest_file.flush().await.context("刷新文件缓冲区失败")?;
+    // 关闭发送端，通知 updater 完成
+    drop(tx);
+    // 等待 updater 完成并已设置 finish message
+    let _ = updater_handle.await;
+
     Ok(())
 }
 
-/// 获取远程文件大小
-fn get_file_length(resp: &Response) -> Result<u64> {
-    if let Some(file_length) = resp.headers().get("Content-Length") {
-        let fl_str = file_length
-            .to_str()
-            .context(format!("HTTP头读取时解码失败: {:?}", file_length))?;
-        let fl_u64: u64 = fl_str
-            .parse()
-            .context(format!("Content-Length: {} 似乎不是有效的整数？", fl_str))?;
-        Ok(fl_u64)
-    } else {
-        anyhow::bail!(
-            "未能找到 HTTP 头 Content-Length 来获得文件大小在 {}",
-            resp.url()
-        )
-    }
+// ------------------ 小的辅助函数，帮助拆分主流程 ------------------
+fn extract_prefix_from_pb(pb: &ProgressBar) -> String {
+    let original_msg = pb.message().to_string();
+    original_msg
+        .split_once("] ")
+        .map(|(prefix, _)| format!("{}] ", prefix))
+        .unwrap_or_default()
 }
 
-/// 获取远程文件大小（不打开完整响应）
-async fn get_file_size(url: &str) -> Result<u64> {
-    let client = reqwest::Client::new();
-    let response = client
-        .head(url)
-        .send()
-        .await
-        .context(format!("无法发送HEAD请求到: {}", url))?;
-
-    get_file_length(&response)
+fn extract_full_filename(dest_path: &Path) -> String {
+    dest_path
+        .file_name()
+        .unwrap_or(std::ffi::OsStr::new("unknown"))
+        .to_string_lossy()
+        .to_string()
 }
 
-/// 确保响应成功
-fn ensure_success_response(response: &reqwest::Response) -> Result<()> {
-    if !response.status().is_success() {
-        Err(anyhow::anyhow!("下载失败，状态码: {}", response.status()))
-    } else {
-        Ok(())
-    }
-}
+// spawn_progress_updater 已移动到 progress.rs，实现 UI 更新逻辑。
+
