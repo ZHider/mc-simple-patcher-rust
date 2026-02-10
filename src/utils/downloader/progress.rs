@@ -58,7 +58,7 @@ pub fn create_progress_bar(
     multi_progress: &MultiProgress,
     file_size: Option<u64>,
     index: usize,
-    total: usize,
+    total: Option<usize>,
     filename: &str,
 ) -> ProgressBar {
     let initial_length = file_size.unwrap_or(0);
@@ -70,8 +70,9 @@ pub fn create_progress_bar(
     // 初始文件名显示（字符偏移从0开始）
     let formatted_name = format_filename_with_scroll(filename, 30, 0);
 
-    // 设置消息（带序号和格式化后的文件名）
-    let file_info = format!("[{:2}/{}] {}", index + 1, total, formatted_name);
+    // 设置消息（带序号和格式化后的文件名），当 total 未知时显示 `?`
+    let total_display = total.map(|t| t.to_string()).unwrap_or_else(|| "?".to_string());
+    let file_info = format!("[{:2}/{}] {}", index + 1, total_display, formatted_name);
     pb.set_message(file_info);
 
     // 保存原始文件名作为状态（我们需要在下载时更新它）

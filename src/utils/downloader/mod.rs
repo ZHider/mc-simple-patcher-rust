@@ -21,10 +21,6 @@ pub struct DownloadTask {
     pub check_sha256: bool,
 }
 
-pub fn init_tokio_runtime() {
-    // indicatif 不需要全局运行时，这个函数保留以保持兼容性
-}
-
 /// 简单的单文件下载
 pub async fn download_file(url: &str, dest_path: &Path, check_sha256: bool) -> Result<()> {
     // 检查文件是否已存在且完整
@@ -62,17 +58,27 @@ pub async fn download_files_with_progress<I>(tasks: I) -> Result<()>
 where
     I: IntoIterator<Item = DownloadTask>,
 {
-    let tasks_vec: Vec<_> = tasks.into_iter().collect();
-    let total = tasks_vec.len();
+    // 懒惰处理传入迭代器：不提前 collect，尽量保持惰性求值
+    let tasks_iter = tasks.into_iter();
+    let (lower, upper) = tasks_iter.size_hint();
+    let total_opt: Option<usize> = upper.or(Some(lower));
+    let total_for_log = total_opt.unwrap_or(0);
 
-    log::info!("开始下载 {} 个文件", total);
+    log::info!("开始下载 {} 个文件", total_for_log);
 
     let multi_progress = setup_multi_progress();
 
-    // 为每个任务创建进度条
-    let mut handles = Vec::new();
+    // 并发数：若已知 total 则取 min(total,6)，否则默认使用 6
+    let concurrency = match total_opt {
+        Some(t) => if t >= 6 { 6 } else { t },
+        None => 6,
+    };
 
-    for (idx, task) in tasks_vec.into_iter().enumerate() {
+    // 在异步闭包内对 multi_progress 做不可变借用来创建每个任务的 ProgressBar，避免使用 Arc
+    let task_stream = futures::stream::iter(tasks_iter.enumerate().map(move |(idx, task)| {
+        let total_copy = total_opt; // Option<usize> is Copy
+
+        // 在同步闭包内创建 ProgressBar（不会跨 await），然后把 owned ProgressBar 移入 async block
         let filename = task
             .dest_path
             .file_name()
@@ -80,40 +86,32 @@ where
             .to_string_lossy()
             .to_string();
 
-        // 获取文件大小
-        let file_size = get_file_size(&task.url).await.ok();
+        let progress_bar = create_progress_bar(&multi_progress, None, idx, total_copy, &filename);
 
-        // 创建进度条
-        let progress_bar = create_progress_bar(&multi_progress, file_size, idx, total, &filename);
+        async move {
+            // 异步在任务内查询文件大小（可选）
+            let _ = get_file_size(&task.url).await.ok();
 
-        // 创建异步下载任务
-        let download_task = task;
-
-        let handle = tokio::spawn(async move {
+            // 执行下载并返回结果
             download_file_with_progress(
-                &download_task.url,
-                &download_task.dest_path,
-                download_task.check_sha256,
+                &task.url,
+                &task.dest_path,
+                task.check_sha256,
                 progress_bar,
             )
             .await
-        });
+        }
+    }));
 
-        handles.push(handle);
-    }
-
-    // 等待所有下载完成
-    for handle in handles {
-        match handle.await {
-            Ok(Ok(_)) => {},
-            Ok(Err(e)) => {
+    // 运行限并发流并处理每个结果
+    task_stream
+        .buffer_unordered(concurrency)
+        .for_each(|res| async move {
+            if let Err(e) = res {
                 crate::utils::print_error_chain(&e);
             }
-            Err(e) => {
-                log::error!("下载任务被取消: {}", e);
-            }
-        }
-    }
+        })
+        .await;
 
     log::info!("所有文件下载完成！");
     Ok(())
