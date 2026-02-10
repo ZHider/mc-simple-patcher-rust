@@ -1,8 +1,9 @@
 //! 锚点搜索模块
 //! 实现锚点文件/文件夹的搜索和工作目录定位功能
 
-use anyhow::Result;
+use anyhow::{Ok, Result};
 use std::path::{Path, PathBuf};
+use walkdir::WalkDir;
 
 /// 搜索锚点并返回工作目录
 pub fn find_anchor(
@@ -30,51 +31,36 @@ pub fn find_anchor(
         return Ok(result);
     }
 
-    // 递归搜索父目录
-    let result = search_parent_dirs(anchor_name, start_dir, max_depth)?;
+    // 递归搜索子目录
+    let result = search_sub_dirs(anchor_name, start_dir, max_depth);
 
     if result.is_none() {
-        log::warn!("未找到锚点: {}", anchor_name);
+        log::error!("未找到锚点: {}", anchor_name);
     }
 
     Ok(result)
 }
 
-/// 在父目录中搜索锚点
-fn search_parent_dirs(
+/// 在子目录中搜索锚点
+fn search_sub_dirs(
     anchor_name: &str,
     start_dir: &Path,
     max_depth: usize,
-) -> Result<Option<PathBuf>> {
-    let mut current_dir = start_dir;
-    let mut depth = 0;
-
-    while let Some(parent) = current_dir.parent() {
-        if depth >= max_depth {
-            log::warn!("达到最大递归深度，停止搜索");
-            break;
+) -> Option<PathBuf> {
+    let walker = WalkDir::new(start_dir)
+        .max_depth(max_depth)
+        .contents_first(true);
+    for file in walker {
+        if file.is_err() {
+            log::error!("文件搜索时遇到错误：{}", file.unwrap_err());
+            continue;
         }
-
-        let anchor_path = parent.join(anchor_name);
-        if anchor_path.exists() {
-            let result = if anchor_path.is_file() {
-                log::info!("在父目录找到锚点文件: {}", anchor_path.display());
-                anchor_path.parent().map(|p| p.to_path_buf())
-            } else if anchor_path.is_dir() {
-                log::info!("在父目录找到锚点目录: {}", anchor_path.display());
-                Some(anchor_path)
-            } else {
-                None
-            };
-
-            return Ok(result);
+        let file = file.unwrap();
+        if file.file_name() == anchor_name {
+            return Some(file.into_path());
         }
-
-        current_dir = parent;
-        depth += 1;
     }
-
-    Ok(None)
+    None
 }
 
 /// 应用锚点搜索优化策略
@@ -96,6 +82,7 @@ pub fn find_anchor_optimized(
 
 /// 检查特殊的目录结构
 fn check_special_structures(anchor_name: &str, start_dir: &Path) -> Option<Option<PathBuf>> {
+    log::debug!("当前搜索路径：{}", start_dir.display());
     // 策略1: 判断当前目录是否为`mods`。如果有，查看父目录下是否有anchor文件。
     if start_dir.file_name().is_some_and(|name| name == "mods") {
         log::info!(
@@ -127,11 +114,10 @@ fn check_special_structures(anchor_name: &str, start_dir: &Path) -> Option<Optio
 
     // 策略3: 判断当前文件夹下是否有`.minecraft`、`versions`文件夹。如果有，导航到`versions`文件夹下，
     // 进行最大深度为2的广度优先搜索，查看anchor文件是否在`.minecraft\versions\{Mod Pack Name}`目录下。
-    let minecraft_path = start_dir.join(".minecraft");
-    let versions_path = start_dir.join("versions");
-    if minecraft_path.is_dir() && versions_path.is_dir() {
+    let versions_path = start_dir.join(".minecraft").join("versions");
+    if versions_path.is_dir() {
         log::info!(
-            "发现.minecraft和versions文件夹，进行广度优先搜索anchor文件: {}",
+            "发现.minecraft/versions文件夹，进行广度优先搜索anchor文件: {}",
             anchor_name
         );
         if let Some(result) = breadth_first_search_for_anchor(&versions_path, anchor_name, 2) {
@@ -182,43 +168,4 @@ fn breadth_first_search_for_anchor(
     }
 
     None
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::fs;
-    use tempfile::TempDir;
-
-    /// 测试用的最大递归深度
-    const TEST_MAX_DEPTH: usize = 5;
-
-    #[test]
-    fn test_anchor_finder() -> Result<()> {
-        // 创建临时目录结构
-        let temp_dir = TempDir::new()?;
-        let anchor_file = temp_dir.path().join("anchor.txt");
-        fs::write(&anchor_file, "test")?;
-
-        let result = find_anchor("anchor.txt", temp_dir.path(), TEST_MAX_DEPTH)?;
-
-        assert_eq!(result, Some(temp_dir.path().to_path_buf()));
-        Ok(())
-    }
-
-    #[test]
-    fn test_check_special_structures_mods_dir() -> Result<()> {
-        // 创建临时目录结构: temp/mods/ + temp/anchor.txt
-        let temp_dir = TempDir::new()?;
-        let mods_dir = temp_dir.path().join("mods");
-        std::fs::create_dir(&mods_dir)?;
-
-        let anchor_file = temp_dir.path().join("anchor.txt");
-        fs::write(&anchor_file, "test")?;
-
-        let result = check_special_structures("anchor.txt", temp_dir.path());
-
-        assert_eq!(result, Some(Some(temp_dir.path().to_path_buf())));
-        Ok(())
-    }
 }

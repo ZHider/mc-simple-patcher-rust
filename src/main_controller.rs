@@ -16,7 +16,7 @@ use std::{
 use rayon::prelude::*;
 
 /// 默认最大递归深度
-const DEFAULT_MAX_DEPTH: usize = 10;
+const DEFAULT_MAX_DEPTH: usize = 5;
 
 /// 执行补丁操作
 pub async fn execute_patch(config: &Config) -> Result<()> {
@@ -182,9 +182,12 @@ async fn sync_files(
             }
         }
     }
-    download_files_with_progress(files_needs_download.into_iter())
-        .await
-        .context("批量下载文件时出错……")?;
+
+    if !files_needs_download.is_empty() {
+        download_files_with_progress(files_needs_download.into_iter())
+            .await
+            .context("批量下载文件时出错……")?;
+    }
 
     Ok(())
 }
