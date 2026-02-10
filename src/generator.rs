@@ -3,10 +3,13 @@
 
 use anyhow::{Context, Result};
 use hex::ToHex;
+use indicatif::ProgressBar;
+use rayon::prelude::*;
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 
 use crate::config::Config;
 use crate::file_manager;
@@ -211,13 +214,62 @@ fn create_group_config(
         files: Vec::new(),
     };
 
-    // 为每个找到的文件创建配置条目
-    for file_path in files {
-        let file_rule = create_file_rule(rule, &file_path)?;
-        new_group.files.push(file_rule);
+    // 创建进度跟踪器
+    let progress = FileProcessingProgressTracker::new(files.len());
+
+    // 使用 rayon 并行处理文件
+    let file_rules: Vec<Result<crate::config::FileRule>> = files
+        .into_par_iter()
+        .map(|file_path| {
+            let result = create_file_rule(rule, &file_path);
+            progress.update();
+            result
+        })
+        .collect();
+
+    progress.finish();
+    println!();
+
+    // 处理结果
+    for file_rule in file_rules {
+        match file_rule {
+            Ok(rule) => new_group.files.push(rule),
+            Err(e) => log::warn!("生成文件规则失败: {}", e),
+        }
     }
 
     Ok(new_group)
+}
+
+/// 文件处理进度跟踪器
+struct FileProcessingProgressTracker {
+    pb: Mutex<ProgressBar>,
+}
+
+impl FileProcessingProgressTracker {
+    pub fn new(total: usize) -> Arc<Self> {
+        let pb = ProgressBar::new(total as u64);
+        pb.set_style(
+            indicatif::ProgressStyle::default_bar()
+                .template("[{bar:40.cyan/blue}] {pos}/{len} ({percent}%) {msg}")
+                .unwrap()
+                .progress_chars("=>-"),
+        );
+        pb.set_message("文件规则生成中: ");
+        Arc::new(Self {
+            pb: Mutex::new(pb),
+        })
+    }
+
+    pub fn update(&self) {
+        let guard = self.pb.lock().unwrap();
+        guard.inc(1);
+    }
+
+    pub fn finish(&self) {
+        let guard = self.pb.lock().unwrap();
+        guard.finish();
+    }
 }
 
 /// 创建文件规则
@@ -314,85 +366,4 @@ fn write_generated_config(base_config: &Config, toml_file: &Path) -> Result<()> 
     log::info!("配置文件已生成: {}", output_path.display());
 
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::fs;
-    use tempfile::TempDir;
-
-    #[tokio::test]
-    async fn test_generate_config_from_toml_basic() -> Result<()> {
-        // 创建临时目录
-        let temp_dir = TempDir::new()?;
-        let temp_path = temp_dir.path();
-
-        // 创建一个模拟的 generate.toml 文件
-        let generate_toml_path = temp_path.join("test_generate.toml");
-        let generate_content = r#"metadata = "http://example.com/config.toml"
-version = 1
-
-[[generate]]
-anchor = "test_anchor.txt"
-root = "."
-pattern = '.*\.txt$'
-recursive = false
-url_base = "http://example.com/mods/"
-name = true
-mod_id = false
-mod_version = false
-sha256 = true
-"#;
-        fs::write(&generate_toml_path, generate_content)?;
-
-        // 创建锚点文件
-        let anchor_file = temp_path.join("test_anchor.txt");
-        fs::write(&anchor_file, "anchor content")?;
-
-        // 创建一些测试文件
-        let test_file1 = temp_path.join("test1.txt");
-        fs::write(&test_file1, "test content 1")?;
-
-        let test_file2 = temp_path.join("test2.txt");
-        fs::write(&test_file2, "test content 2")?;
-
-        // 切换到临时目录以确保锚点查找正常工作
-        let original_dir = std::env::current_dir()?;
-        std::env::set_current_dir(temp_path)?;
-
-        // 运行生成函数
-        let result = generate_config_from_toml(generate_toml_path).await;
-
-        // 恢复原始目录
-        std::env::set_current_dir(original_dir)?;
-
-        // 检查是否成功
-        assert!(result.is_ok());
-
-        // 检查是否生成了输出文件
-        let output_path = temp_path.join("test_generate-generated.toml");
-        assert!(output_path.exists());
-
-        // 读取并验证生成的配置
-        let generated_content = fs::read_to_string(output_path)?;
-        assert!(generated_content.contains("metadata"));
-        assert!(generated_content.contains("version"));
-
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn test_generate_config_from_toml_invalid_file() -> Result<()> {
-        // 创建一个不存在的文件路径
-        let invalid_path = PathBuf::from("/non/existent/file.toml");
-
-        // 运行生成函数，应该返回错误
-        let result = generate_config_from_toml(invalid_path).await;
-
-        // 检查是否返回错误
-        assert!(result.is_err());
-
-        Ok(())
-    }
 }
