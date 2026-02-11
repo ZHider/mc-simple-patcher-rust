@@ -1,7 +1,7 @@
-use super::configure_request_version;
+use super::build_request;
 use crate::utils;
 use anyhow::Result;
-use std::path::Path;
+use std::{path::Path, time::Duration};
 
 /// 从HTTP响应头中尝试获取SHA256哈希值
 fn get_sha256_from_headers(response: &reqwest::Response) -> Option<String> {
@@ -35,7 +35,7 @@ async fn get_sha256_from_file(client: &reqwest::Client, url: &str) -> Option<Str
     log::debug!("尝试从 {} 获取SHA256哈希值", sha256_url);
 
     let request = client.get(&sha256_url);
-    let configured_request = configure_request_version(request);
+    let configured_request = build_request(request);
     let response = configured_request.send().await.ok()?;
     if !response.status().is_success() {
         return None;
@@ -48,9 +48,9 @@ async fn get_sha256_from_file(client: &reqwest::Client, url: &str) -> Option<Str
 }
 
 /// 检查文件是否已存在且与远程文件哈希值匹配
-pub async fn check_file_integrity(url: &str, dest_path: &Path) -> Result<bool> {
+pub async fn check_file_integrity(url: &str, dest_path: &Path) -> Result<Option<bool>> {
     if !dest_path.exists() {
-        return Ok(false);
+        return Ok(Some(false));
     }
 
     log::info!("文件已存在，检查完整性: {}", dest_path.display());
@@ -62,8 +62,10 @@ pub async fn check_file_integrity(url: &str, dest_path: &Path) -> Result<bool> {
     let mut remote_sha256 = None;
 
     let head_request = client.head(url);
-    let configured_head_request = configure_request_version(head_request);
-    if let Ok(head_response) = configured_head_request.send().await
+    let configured_head_request = build_request(head_request)
+        .timeout(Duration::from_secs(1))
+        .send();
+    if let Ok(head_response) = configured_head_request.await
         && head_response.status().is_success()
     {
         remote_sha256 = get_sha256_from_headers(&head_response);
@@ -83,19 +85,19 @@ pub async fn check_file_integrity(url: &str, dest_path: &Path) -> Result<bool> {
 
         if local_sha256 == remote_sha256_val {
             log::info!("文件已是最新版本: {}", dest_path.display());
-            Ok(true)
+            Ok(Some(true))
         } else {
             log::info!(
                 "文件已存在但内容不同，需要重新下载: {}",
                 dest_path.display()
             );
-            Ok(false)
+            Ok(Some(false))
         }
     } else {
         log::info!(
             "服务器未提供SHA256哈希值，跳过完整性检查: {}",
             dest_path.display()
         );
-        Ok(false)
+        Ok(None)
     }
 }

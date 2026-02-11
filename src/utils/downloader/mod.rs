@@ -1,6 +1,7 @@
 mod hash_check;
 mod helpers;
 mod progress;
+pub mod self_update;
 
 use anyhow::{Context, Result};
 use futures::{AsyncReadExt, StreamExt, TryStreamExt};
@@ -33,7 +34,7 @@ pub fn create_http_client() -> Result<reqwest::Client> {
 }
 
 /// 为请求添加版本信息（如果需要）
-fn configure_request_version(request: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
+fn build_request(request: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
     let config = get_global_config();
 
     if let Some(config) = config.network
@@ -57,23 +58,33 @@ async fn download_file_internal(
     url: &str,
     dest_path: &Path,
     check_sha256: bool,
+    stop_when_check_failed: bool,
     progress_bar: Option<&ProgressBar>,
 ) -> Result<bool> {
     // 检查文件是否已存在且完整
-    if check_sha256 && hash_check::check_file_integrity(url, dest_path).await? {
-        if let Some(pb) = progress_bar {
-            let prefix = extract_prefix_from_pb(pb);
-            log::debug!("跳过: 文件已是最新版本");
-            pb.finish_with_message(format!("{}✓ 已跳过", prefix));
-        } else {
-            log::info!("跳过下载，文件已是最新版本: {}", dest_path.display());
+    if check_sha256 {
+        match hash_check::check_file_integrity(url, dest_path).await? {
+            // 检查成功且文件完整
+            Some(true) => {
+                if let Some(pb) = progress_bar {
+                    let prefix = extract_prefix_from_pb(pb);
+                    log::debug!("跳过: 文件已是最新版本");
+                    pb.finish_with_message(format!("{}✓ 已跳过", prefix));
+                } else {
+                    log::info!("跳过下载，文件已是最新版本: {}", dest_path.display());
+                }
+                return Ok(false);
+            }
+            // 检查失败，不知道文件是否完整
+            None if stop_when_check_failed => return Ok(false),
+            // 其他情况直接继续
+            _ => {}
         }
-        return Ok(false);
     }
 
     let client = create_http_client()?;
     let request = client.get(url);
-    let configured_request = configure_request_version(request);
+    let configured_request = build_request(request);
     let response = configured_request
         .send()
         .await
@@ -92,7 +103,12 @@ async fn download_file_internal(
 
 /// 简单的单文件下载
 pub async fn download_file(url: &str, dest_path: &Path, check_sha256: bool) -> Result<bool> {
-    download_file_internal(url, dest_path, check_sha256, None).await
+    download_file_internal(url, dest_path, check_sha256, false, None).await
+}
+
+/// 只有sha256不对的时候才下载文件
+pub async fn download_file_lazy(url: &str, dest_path: &Path) -> Result<bool> {
+    download_file_internal(url, dest_path, true, true, None).await
 }
 
 /// 使用 indicatif 多进度条批量下载文件，接受迭代器
@@ -142,6 +158,7 @@ where
                 &task.url,
                 &task.dest_path,
                 task.check_sha256,
+                false,
                 Some(&progress_bar),
             )
             .await?;

@@ -122,6 +122,7 @@ fn load_base_config(
                     .map(|v| v as u32),
             },
             network: Some(crate::config::NetworkConfig::default()),
+            self_update_url: None,
             groups: vec![],
         })
     } else {
@@ -144,6 +145,7 @@ fn load_base_config(
                             version: Some(0),
                         },
                         network: Some(crate::config::NetworkConfig::default()),
+                        self_update_url: None,
                         groups: vec![],
                     })
                 }
@@ -156,6 +158,7 @@ fn load_base_config(
                     version: Some(0),
                 },
                 network: Some(crate::config::NetworkConfig::default()),
+                self_update_url: None,
                 groups: vec![],
             })
         }
@@ -370,6 +373,7 @@ fn write_generated_config(base_config: &Config, toml_file: &Path) -> Result<()> 
 
     // 生成.sha256文件
     write_sha256(&output_path)?;
+    write_sha256(std::env::current_exe()?.as_path())?;
 
     Ok(())
 }

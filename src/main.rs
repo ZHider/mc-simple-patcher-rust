@@ -60,6 +60,9 @@ async fn main() -> Result<()> {
 
     log::info!("Minecraft 简易补丁工具启动");
 
+    // 检查自更新
+    check_self_update(&args.config).await;
+
     let result = match args.command {
         Some(Commands::Generate { toml_file }) => {
             // 如果提供了 generate 子命令，则进入生成模式
@@ -87,6 +90,29 @@ async fn main() -> Result<()> {
     pause_before_exit();
 
     result
+}
+
+/// 检查并执行自更新
+async fn check_self_update(config_path: &std::path::Path) {
+    // 解析配置文件以检查是否有更新URL
+    match config::parse_config(config_path) {
+        Ok(config) => match utils::downloader::self_update::check_for_update(&config).await {
+            Ok(updated) => {
+                if updated {
+                    log::info!("程序已更新，请重新运行程序");
+                    std::process::exit(0);
+                }
+            }
+            Err(e) => {
+                log::error!("自更新失败: {}", e);
+                crate::utils::print_error_chain(&e);
+            }
+        },
+        Err(e) => {
+            log::error!("解析配置文件以检查更新失败: {}", e);
+            crate::utils::print_error_chain(&e);
+        }
+    }
 }
 
 /// 程序退出前暂停，等待用户按键

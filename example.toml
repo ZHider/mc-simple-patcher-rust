@@ -1,6 +1,9 @@
 # 更新文件地址，每次启动都会检查更新
 metadata = "http://example.com/metadata.toml"
 
+# 自更新地址（可选），如果指定，程序启动时会检查并更新自身
+# self_update_url = "http://example.com/mc_simple_patcher.exe"
+
 # 版本号，目前仅作为标识作用
 version = 0
 

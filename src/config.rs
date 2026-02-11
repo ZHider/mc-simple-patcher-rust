@@ -61,6 +61,7 @@ pub struct Config {
     pub metadata_config: MetadataConfig,
     #[serde(default)]
     pub network: Option<NetworkConfig>,
+    pub self_update_url: Option<String>,
     pub groups: Vec<GroupConfig>,
 }
 
@@ -81,6 +82,13 @@ fn validate_config(config: &Config) -> Result<()> {
         if network_config.ignore_invalid_cert {
             log::warn!("已经关闭证书验证，您的通讯可能更容易遭受 MITM 攻击！");
         }
+    }
+
+    // 验证 self_update_url（如果存在）
+    if let Some(update_url) = &config.self_update_url
+        && (!update_url.starts_with("http://") && !update_url.starts_with("https://"))
+    {
+        anyhow::bail!("self_update_url must be a valid HTTP or HTTPS URL");
     }
 
     for group in &config.groups {
@@ -153,6 +161,7 @@ mod tests {
                 version: Some(1),
             },
             network: Some(NetworkConfig::default()),
+            self_update_url: None,
             groups: vec![GroupConfig {
                 anchor: "mods".to_string(),
                 root: "./mods".to_string(),
