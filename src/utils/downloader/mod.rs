@@ -8,13 +8,10 @@ use helpers::{ensure_success_response, get_file_length};
 use indicatif::ProgressBar;
 use progress::{create_progress_bar, setup_multi_progress, spawn_progress_updater};
 use reqwest::{self};
-use std::io::{Error, ErrorKind};
 use std::path::Path;
 // Duration not needed here; kept in progress.rs
 use crate::global_config::get_global_config;
 use tokio::io::AsyncWriteExt;
-use tokio::sync::mpsc;
-
 /// 根据网络配置创建HTTP客户端
 pub fn create_http_client() -> Result<reqwest::Client> {
     let config = get_global_config();
@@ -55,11 +52,22 @@ pub struct DownloadTask {
     pub check_sha256: bool,
 }
 
-/// 简单的单文件下载
-pub async fn download_file(url: &str, dest_path: &Path, check_sha256: bool) -> Result<bool> {
+/// 内部下载函数，实现核心下载逻辑
+async fn download_file_internal(
+    url: &str,
+    dest_path: &Path,
+    check_sha256: bool,
+    progress_bar: Option<&ProgressBar>,
+) -> Result<bool> {
     // 检查文件是否已存在且完整
     if check_sha256 && hash_check::check_file_integrity(url, dest_path).await? {
-        log::info!("跳过下载，文件已是最新版本: {}", dest_path.display());
+        if let Some(pb) = progress_bar {
+            let prefix = extract_prefix_from_pb(pb);
+            log::debug!("跳过: 文件已是最新版本");
+            pb.finish_with_message(format!("{}✓ 已跳过", prefix));
+        } else {
+            log::info!("跳过下载，文件已是最新版本: {}", dest_path.display());
+        }
         return Ok(false);
     }
 
@@ -73,19 +81,18 @@ pub async fn download_file(url: &str, dest_path: &Path, check_sha256: bool) -> R
 
     ensure_success_response(&response)?;
 
-    let mut dest_file = tokio::fs::File::create(dest_path)
-        .await
-        .context(format!("无法创建目标文件: {:?}", dest_path))?;
-
-    let mut stream = response.bytes_stream();
-
-    while let Some(chunk_result) = stream.next().await {
-        let chunk = chunk_result.context("无法读取数据块")?;
-        dest_file.write_all(&chunk).await.context("无法写入文件")?;
+    if let Some(pb) = progress_bar {
+        // 带进度条的下载
+        download_with_progress_logic(response, dest_path, pb).await
+    } else {
+        // 不带进度条的简单下载
+        download_without_progress_logic(response, dest_path).await
     }
+}
 
-    log::info!("下载完成: {}", dest_path.display());
-    Ok(true)
+/// 简单的单文件下载
+pub async fn download_file(url: &str, dest_path: &Path, check_sha256: bool) -> Result<bool> {
+    download_file_internal(url, dest_path, check_sha256, None).await
 }
 
 /// 使用 indicatif 多进度条批量下载文件，接受迭代器
@@ -131,8 +138,14 @@ where
 
         async move {
             // 执行下载并返回结果
-            download_file_with_progress(&task.url, &task.dest_path, task.check_sha256, progress_bar)
-                .await
+            download_file_internal(
+                &task.url,
+                &task.dest_path,
+                task.check_sha256,
+                Some(&progress_bar),
+            )
+            .await?;
+            Ok(())
         }
     }));
 
@@ -150,32 +163,14 @@ where
     Ok(())
 }
 
-/// 带进度条的异步文件下载（支持长文件名滚动显示）
-async fn download_file_with_progress(
-    url: &str,
+/// 带进度条的下载逻辑
+async fn download_with_progress_logic(
+    response: reqwest::Response,
     dest_path: &Path,
-    check_sha256: bool,
-    pb: ProgressBar,
-) -> Result<()> {
-    let prefix = extract_prefix_from_pb(&pb);
+    pb: &ProgressBar,
+) -> Result<bool> {
     let full_filename = extract_full_filename(dest_path);
-
-    // 检查文件是否已存在且完整
-    if check_sha256 && hash_check::check_file_integrity(url, dest_path).await? {
-        log::debug!("跳过: 文件已是最新版本");
-        pb.finish_with_message(format!("{}✓ 已跳过", prefix));
-        return Ok(());
-    }
-
-    let client = create_http_client()?;
-    let request = client.get(url);
-    let configured_request = configure_request_version(request);
-    let response = configured_request
-        .send()
-        .await
-        .context(format!("无法发送请求到: {}", url))?;
-
-    ensure_success_response(&response)?;
+    let prefix = extract_prefix_from_pb(pb);
 
     let total_size = get_file_length(&response)?;
     pb.set_length(total_size);
@@ -184,9 +179,6 @@ async fn download_file_with_progress(
         .await
         .context(format!("无法创建目标文件: {:?}", dest_path))?;
 
-    // 辅助函数：提取前缀和文件名用的小函数在文件底部实现
-
-    // ====================== 关键修复部分 ======================
     // 将流转换为 AsyncRead，然后把下载与进度更新拆分成两个任务：
     //  - 下载任务：负责从网络读取并写入磁盘，同时把已读取的字节数发送到通道
     //  - 更新任务：独立运行，接收字节数并以固定频率更新进度条和滚动文本
@@ -194,11 +186,11 @@ async fn download_file_with_progress(
     let mut response_body = response
         .bytes_stream()
         // 将reqwest::Error转为std::io::Error（核心修复）
-        .map_err(|e| Error::other(format!("reqwest error: {}", e)))
+        .map_err(|e| std::io::Error::other(format!("reqwest error: {}", e)))
         .into_async_read();
 
     // 通道用于在下载任务与更新任务之间传递已下载字节数
-    let (tx, rx) = mpsc::channel::<u64>(128);
+    let (tx, rx) = tokio::sync::mpsc::channel::<u64>(128);
 
     // 克隆用于 updater 的状态
     let pb_updater = pb.clone();
@@ -229,7 +221,7 @@ async fn download_file_with_progress(
                 let _ = tx.send(chunk_len).await;
             }
             Ok(0) => break,
-            Err(e) if e.kind() != ErrorKind::Interrupted => {
+            Err(e) if e.kind() != std::io::ErrorKind::Interrupted => {
                 return Err(e).context("读取响应体失败");
             }
             _ => continue,
@@ -242,7 +234,27 @@ async fn download_file_with_progress(
     // 等待 updater 完成并已设置 finish message
     let _ = updater_handle.await;
 
-    Ok(())
+    Ok(true)
+}
+
+/// 不带进度条的下载逻辑
+async fn download_without_progress_logic(
+    response: reqwest::Response,
+    dest_path: &Path,
+) -> Result<bool> {
+    let mut dest_file = tokio::fs::File::create(dest_path)
+        .await
+        .context(format!("无法创建目标文件: {:?}", dest_path))?;
+
+    let mut stream = response.bytes_stream();
+
+    while let Some(chunk_result) = stream.next().await {
+        let chunk = chunk_result.context("无法读取数据块")?;
+        dest_file.write_all(&chunk).await.context("无法写入文件")?;
+    }
+
+    log::info!("下载完成: {}", dest_path.display());
+    Ok(true)
 }
 
 // ------------------ 小的辅助函数，帮助拆分主流程 ------------------
