@@ -6,17 +6,13 @@ use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 
 /// 搜索锚点并返回工作目录
-pub fn find_anchor(
-    anchor_name: &str,
-    start_dir: &Path,
-    max_depth: usize,
-) -> Result<Option<PathBuf>> {
+pub fn find_anchor(anchor_name: &str, start_dir: &Path, max_depth: usize) -> Option<PathBuf> {
     log::info!("开始搜索锚点: {}", anchor_name);
 
     // 检查当前目录是否包含名为 anchor_name 的文件或文件夹
     let current_path = start_dir.join(anchor_name);
     if current_path.exists() {
-        let result = if current_path.is_file() {
+        return if current_path.is_file() {
             // 如果是文件，返回其所在目录
             log::info!("在当前目录找到锚点文件: {}", current_path.display());
             current_path.parent().map(|p| p.to_path_buf())
@@ -27,26 +23,14 @@ pub fn find_anchor(
         } else {
             None
         };
-
-        return Ok(result);
     }
 
     // 递归搜索子目录
-    let result = search_sub_dirs(anchor_name, start_dir, max_depth);
-
-    if result.is_none() {
-        log::error!("未找到锚点: {}", anchor_name);
-    }
-
-    Ok(result)
+    search_sub_dirs(anchor_name, start_dir, max_depth)
 }
 
 /// 在子目录中搜索锚点
-fn search_sub_dirs(
-    anchor_name: &str,
-    start_dir: &Path,
-    max_depth: usize,
-) -> Option<PathBuf> {
+fn search_sub_dirs(anchor_name: &str, start_dir: &Path, max_depth: usize) -> Option<PathBuf> {
     let walker = WalkDir::new(start_dir)
         .max_depth(max_depth)
         .contents_first(true);
@@ -68,12 +52,12 @@ pub fn find_anchor_optimized(
     anchor_name: &str,
     start_dir: &Path,
     max_depth: usize,
-) -> Result<Option<PathBuf>> {
+) -> Option<PathBuf> {
     log::info!("使用优化策略搜索锚点: {}", anchor_name);
 
     // 检查特殊目录结构并提前返回
     if let Some(result) = check_special_structures(anchor_name, start_dir) {
-        return Ok(result);
+        return Some(result);
     }
 
     // 使用常规搜索方法
@@ -81,8 +65,26 @@ pub fn find_anchor_optimized(
 }
 
 /// 检查特殊的目录结构
-fn check_special_structures(anchor_name: &str, start_dir: &Path) -> Option<Option<PathBuf>> {
+fn check_special_structures(anchor_name: &str, start_dir: &Path) -> Option<PathBuf> {
+
+    /// 进行最大深度为2的广度优先搜索，查看anchor文件是否在`.minecraft\versions\{Mod Pack Name}`目录下。
+    fn has_mc_vers_dir(anchor_name: &str, start_dir: &Path) -> Option<PathBuf> {
+        let versions_path = start_dir.join(".minecraft").join("versions");
+        if versions_path.is_dir() {
+            log::info!(
+                "发现.minecraft/versions文件夹，进行广度优先搜索anchor文件: {}",
+                anchor_name
+            );
+            if let Some(result) = breadth_first_search_for_anchor(&versions_path, anchor_name, 2) {
+                log::info!("在.minecraft/versions结构中找到anchor文件");
+                return Some(result);
+            }
+        }
+        None
+    }
+
     log::debug!("当前搜索路径：{}", start_dir.display());
+
     // 策略1: 判断当前目录是否为`mods`。如果有，查看父目录下是否有anchor文件。
     if start_dir.file_name().is_some_and(|name| name == "mods") {
         log::info!(
@@ -93,7 +95,7 @@ fn check_special_structures(anchor_name: &str, start_dir: &Path) -> Option<Optio
             let anchor_path = parent.join(anchor_name);
             if anchor_path.exists() && anchor_path.is_file() {
                 log::info!("在父目录找到anchor文件: {}", anchor_path.display());
-                return Some(Some(parent.to_path_buf()));
+                return Some(parent.to_path_buf());
             }
         }
     }
@@ -108,25 +110,18 @@ fn check_special_structures(anchor_name: &str, start_dir: &Path) -> Option<Optio
         let anchor_path = start_dir.join(anchor_name);
         if anchor_path.exists() && anchor_path.is_file() {
             log::info!("在当前目录找到anchor文件: {}", anchor_path.display());
-            return Some(Some(start_dir.to_path_buf()));
+            return Some(start_dir.to_path_buf());
         }
     }
 
     // 策略3: 判断当前文件夹下是否有`.minecraft`、`versions`文件夹。如果有，导航到`versions`文件夹下，
-    // 进行最大深度为2的广度优先搜索，查看anchor文件是否在`.minecraft\versions\{Mod Pack Name}`目录下。
-    let versions_path = start_dir.join(".minecraft").join("versions");
-    if versions_path.is_dir() {
-        log::info!(
-            "发现.minecraft/versions文件夹，进行广度优先搜索anchor文件: {}",
-            anchor_name
-        );
-        if let Some(result) = breadth_first_search_for_anchor(&versions_path, anchor_name, 2) {
-            log::info!("在.minecraft/versions结构中找到anchor文件");
-            return Some(Some(result));
-        }
-    }
-
-    None
+    // 策略4：搜索官方路径（Appdata）下是否有versions文件夹
+    has_mc_vers_dir(anchor_name, start_dir).or_else(|| {
+        let appdata = std::env::var_os("APPDATA")?;
+        log::debug!("找到APPDATA路径: {}", appdata.display());
+        has_mc_vers_dir(anchor_name, Path::new(&appdata))
+    })
+    
 }
 
 /// 在指定目录下进行广度优先搜索，寻找anchor文件

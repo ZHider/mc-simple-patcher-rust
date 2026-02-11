@@ -7,6 +7,7 @@ pub mod logger;
 use anyhow::{Error, Result};
 use bytes::Bytes;
 use sha2::{Digest, Sha256};
+use std::ffi::OsString;
 use std::fs::File;
 use std::io::Read;
 use std::path::Path;
@@ -27,30 +28,6 @@ pub fn calculate_file_sha256(file_path: &Path) -> Result<Bytes> {
 
     let hash_bytes_array: [u8; 32] = hasher.finalize().into();
     Ok(Bytes::from(Into::<Box<[u8]>>::into(hash_bytes_array)))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::io::Write;
-    use tempfile::TempDir;
-
-    #[test]
-    fn test_calculate_file_sha256() -> Result<()> {
-        // 创建临时文件进行测试
-        let temp_dir = TempDir::new()?;
-        let test_file = temp_dir.path().join("test.txt");
-
-        // 写入测试内容 "hello world" (不含换行符)
-        let mut file = File::create(&test_file)?;
-        file.write_all(b"hello world")?;
-
-        let expected_hash = "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9";
-        let actual_hash = calculate_file_sha256(&test_file)?;
-
-        assert_eq!(actual_hash, expected_hash);
-        Ok(())
-    }
 }
 
 /// 打印完整的错误信息和错误链

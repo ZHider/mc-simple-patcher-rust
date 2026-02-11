@@ -16,7 +16,7 @@ use std::{
 use rayon::prelude::*;
 
 /// 默认最大递归深度
-const DEFAULT_MAX_DEPTH: usize = 5;
+pub const DEFAULT_MAX_DEPTH: usize = 5;
 
 /// 执行补丁操作
 pub async fn execute_patch(config: &Config) -> Result<()> {
@@ -38,23 +38,16 @@ async fn process_group(group: &GroupConfig) -> Result<()> {
     log::debug!("组配置: {:?}", group);
 
     // 查找锚点
-    let anchor_dir = anchor_finder::find_anchor_optimized(
+    let Some(ref anchor_dir) = anchor_finder::find_anchor_optimized(
         &group.anchor,
         &std::env::current_dir()?,
         DEFAULT_MAX_DEPTH,
-    )
-    .context(format!("无法找到锚点: {}", group.anchor))?;
-
-    let anchor_dir = match anchor_dir {
-        Some(dir) => {
-            log::debug!("找到锚点目录: {}", dir.display());
-            dir
-        }
-        None => {
-            log::error!("未找到锚点 {}, 跳过此组", group.anchor);
-            return Ok(());
-        }
+    ) else {
+        log::error!("未找到锚点 {}, 跳过此组", group.anchor);
+        return Ok(());
     };
+
+    log::debug!("找到锚点目录: {}", anchor_dir.display());
 
     // 计算工作目录
     let work_dir = anchor_dir.join(&group.root);

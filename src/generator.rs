@@ -13,6 +13,7 @@ use std::sync::{Arc, Mutex};
 
 use crate::config::Config;
 use crate::file_manager;
+use crate::main_controller::DEFAULT_MAX_DEPTH;
 
 /// 生成配置的规则定义
 #[derive(Debug, Deserialize)]
@@ -161,12 +162,13 @@ fn load_base_config(
 /// 处理单个生成规则
 async fn process_generate_rule(rule: &GenerateRule) -> Result<Option<crate::config::GroupConfig>> {
     // 查找锚点目录
-    let anchor_dir = crate::file_manager::anchor_finder::find_anchor_optimized(
+    let Some(anchor_dir) = crate::file_manager::anchor_finder::find_anchor_optimized(
         &rule.anchor,
         &std::env::current_dir()?,
-        10,
-    )? // 使用默认最大深度
-    .ok_or_else(|| anyhow::anyhow!("未找到锚点: {}", rule.anchor))?;
+        DEFAULT_MAX_DEPTH,
+    ) else {
+        anyhow::bail!("未找到锚点: {}", rule.anchor);
+    };
 
     // 构建工作目录路径
     let work_dir = anchor_dir.join(&rule.root);
