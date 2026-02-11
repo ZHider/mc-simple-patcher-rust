@@ -1,4 +1,4 @@
-use crate::config::NetworkConfig;
+use super::configure_request_version;
 use crate::utils;
 use anyhow::Result;
 use std::path::Path;
@@ -27,26 +27,15 @@ fn get_sha256_from_headers(response: &reqwest::Response) -> Option<String> {
     None
 }
 
-/// 为请求添加版本信息（如果需要）
-fn configure_request_version(request: reqwest::RequestBuilder, network_config: &Option<NetworkConfig>) -> reqwest::RequestBuilder {
-    if let Some(config) = network_config {
-        if config.quic {
-            // 显式指定使用HTTP/3版本
-            return request.version(reqwest::Version::HTTP_3);
-        }
-    }
-    request
-}
-
 /// 从URL获取对应的.sha256文件内容
-async fn get_sha256_from_file(client: &reqwest::Client, url: &str, network_config: &Option<NetworkConfig>) -> Option<String> {
+async fn get_sha256_from_file(client: &reqwest::Client, url: &str) -> Option<String> {
     // 构造.sha256文件的URL，直接在原URL后添加.sha256
     let sha256_url = format!("{}.sha256", url);
 
     log::debug!("尝试从 {} 获取SHA256哈希值", sha256_url);
 
     let request = client.get(&sha256_url);
-    let configured_request = configure_request_version(request, network_config);
+    let configured_request = configure_request_version(request);
     let response = configured_request.send().await.ok()?;
     if !response.status().is_success() {
         return None;
@@ -59,11 +48,7 @@ async fn get_sha256_from_file(client: &reqwest::Client, url: &str, network_confi
 }
 
 /// 检查文件是否已存在且与远程文件哈希值匹配
-pub async fn check_file_integrity(
-    url: &str,
-    dest_path: &Path,
-    network_config: Option<NetworkConfig>,
-) -> Result<bool> {
+pub async fn check_file_integrity(url: &str, dest_path: &Path) -> Result<bool> {
     if !dest_path.exists() {
         return Ok(false);
     }
@@ -71,13 +56,13 @@ pub async fn check_file_integrity(
     log::info!("文件已存在，检查完整性: {}", dest_path.display());
 
     // 获取远程文件的SHA256哈希值
-    let client = super::create_http_client(network_config)?;
+    let client = super::create_http_client()?;
 
     // 首先尝试从HTTP头部获取
     let mut remote_sha256 = None;
 
     let head_request = client.head(url);
-    let configured_head_request = configure_request_version(head_request, &network_config);
+    let configured_head_request = configure_request_version(head_request);
     if let Ok(head_response) = configured_head_request.send().await
         && head_response.status().is_success()
     {
@@ -88,7 +73,7 @@ pub async fn check_file_integrity(
 
     // 如果头部没有提供，则尝试从.sha256文件获取
     if remote_sha256.is_none() {
-        remote_sha256 = get_sha256_from_file(&client, url, &network_config).await;
+        remote_sha256 = get_sha256_from_file(&client, url).await;
     }
 
     if let Some(remote_sha256_val) = remote_sha256 {

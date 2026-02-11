@@ -37,10 +37,10 @@ impl StringScroller {
     pub fn new(content: &str, display_width: usize) -> Self {
         let content_chars_num = content.chars().count();
         // NoLoop
-        if content_chars_num <= display_width as usize {
+        if content_chars_num <= display_width {
             let loop_content = format!("{:<width$}", content, width = display_width);
             Self {
-                loop_content: loop_content,
+                loop_content,
                 display_width,
                 display_type: DisplayType::NoLoop,
                 char_boundaries: Vec::new(),

@@ -7,6 +7,7 @@ use std::path::PathBuf;
 pub mod config;
 pub mod file_manager;
 pub mod generator;
+mod global_config;
 pub mod main_controller;
 pub mod utils;
 
@@ -106,6 +107,11 @@ fn pause_before_exit() {
 async fn execute_with_config(config_path: &std::path::Path) -> Result<()> {
     log::info!("正在解析配置文件: {}", config_path.display());
     let config = update_metadata(config_path).await?;
+
+    // 初始化全局配置
+    global_config::init_global_config(&config)
+        .map_err(|_| anyhow::anyhow!("Failed to initialize global config"))?;
+
     pause_before_exit();
     main_controller::execute_patch(&config).await
 }
@@ -117,7 +123,7 @@ async fn update_metadata(config_path: &std::path::Path) -> Result<config::Config
     let metadata_url = config.metadata_config.metadata.as_ref().unwrap();
     log::info!("尝试更新元数据: {}", metadata_url);
 
-    match downloader::download_file(metadata_url, config_path, true, config.network).await {
+    match downloader::download_file(metadata_url, config_path, true).await {
         Err(e) => {
             utils::print_error_chain(&e);
             Ok(config)

@@ -19,7 +19,6 @@ pub fn get_file_length(resp: &Response) -> Result<u64> {
     }
 }
 
-
 /// 确保响应成功
 pub fn ensure_success_response(response: &reqwest::Response) -> Result<()> {
     if !response.status().is_success() {

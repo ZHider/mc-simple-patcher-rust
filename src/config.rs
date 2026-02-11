@@ -42,21 +42,12 @@ pub struct GroupConfig {
 }
 
 /// 网络配置
-#[derive(Serialize, Deserialize, Debug, Clone, Copy)]
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, Default)]
 pub struct NetworkConfig {
     #[serde(default)]
     pub quic: bool,
     #[serde(default = "default_ignore_invalid_cert")]
     pub ignore_invalid_cert: bool,
-}
-
-impl Default for NetworkConfig {
-    fn default() -> Self {
-        Self {
-            quic: false,
-            ignore_invalid_cert: false,
-        }
-    }
 }
 
 fn default_ignore_invalid_cert() -> bool {

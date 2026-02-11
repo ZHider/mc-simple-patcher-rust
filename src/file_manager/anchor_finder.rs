@@ -34,8 +34,8 @@ fn search_sub_dirs(anchor_name: &str, start_dir: &Path, max_depth: usize) -> Opt
         .max_depth(max_depth)
         .contents_first(true);
     for file in walker {
-        if file.is_err() {
-            log::error!("文件搜索时遇到错误：{}", file.unwrap_err());
+        if let Err(e) = file {
+            log::error!("文件搜索时遇到错误：{}", e);
             continue;
         }
         let file = file.unwrap();
