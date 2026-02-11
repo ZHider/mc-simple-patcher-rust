@@ -258,9 +258,7 @@ impl FileProcessingProgressTracker {
                 .progress_chars("=>-"),
         );
         pb.set_message("文件规则生成中: ");
-        Arc::new(Self {
-            pb: Mutex::new(pb),
-        })
+        Arc::new(Self { pb: Mutex::new(pb) })
     }
 
     pub fn update(&self) {
@@ -367,5 +365,24 @@ fn write_generated_config(base_config: &Config, toml_file: &Path) -> Result<()> 
 
     log::info!("配置文件已生成: {}", output_path.display());
 
+    // 生成.sha256文件
+    write_sha256(&output_path)?;
+
+    Ok(())
+}
+
+/// 生成sha256文件
+fn write_sha256(file_path: &Path) -> Result<()> {
+    let sha256 =
+        crate::utils::calculate_file_sha256(file_path).context("计算配置文件SHA256失败")?;
+    let sha256_str = hex::encode(sha256);
+    let sha256_path = file_path.with_added_extension("sha256");
+    fs::write(&sha256_path, &sha256_str)
+        .context(format!("写入配置文件SHA256失败: {}", sha256_path.display()))?;
+    log::info!(
+        "成功生成配置校验文件 {}\n\tSHA256: {}",
+        sha256_path.canonicalize()?.display(),
+        sha256_str,
+    );
     Ok(())
 }
