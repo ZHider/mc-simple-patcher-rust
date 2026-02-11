@@ -7,7 +7,6 @@ pub mod logger;
 use anyhow::{Error, Result};
 use bytes::Bytes;
 use sha2::{Digest, Sha256};
-use std::ffi::OsString;
 use std::fs::File;
 use std::io::Read;
 use std::path::Path;

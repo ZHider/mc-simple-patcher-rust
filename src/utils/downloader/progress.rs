@@ -1,4 +1,5 @@
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
+use std::cmp::min;
 use std::time::Duration;
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
@@ -23,33 +24,81 @@ pub fn create_progress_bar_style() -> ProgressStyle {
         .progress_chars("=>-")
 }
 
-/// 格式化文件名，实现跑马灯式滚动
-/// 
-/// # 参数
-/// - `filename`: 原始文件名
-/// - `display_width`: 显示窗口宽度（字符数）
-/// - `character_offset`: 移动的字符数（每次递增1表示移动一个字符）
-pub fn format_filename_with_scroll(filename: &str, display_width: usize, character_offset: usize) -> String {
-    if filename.len() <= display_width {
-        // 文件名较短，用空格填充到指定宽度
-        format!("{:<width$}", filename, width = display_width)
-    } else {
-        // 文件名过长，实现跑马灯式滚动
-        // 创建循环字符串：filename + 5个空格 + filename（循环）
-        const SEPARATOR_SPACES: usize = 5;
-        let loop_content = format!("{}{}", filename, " ".repeat(SEPARATOR_SPACES));
-        let loop_len = loop_content.len();
+pub struct StringScroller {
+    loop_content: String,
+    display_width: usize,
+    display_type: DisplayType,
+    char_boundaries: Vec<usize>,
+    offset_max: usize,
+}
 
-        // 根据字符offset计算当前窗口位置（使用模运算实现循环）
-        let offset = (character_offset as usize) % loop_len;
+#[derive(Clone, Copy)]
+enum DisplayType {
+    NoLoop,
+    Loop,
+}
 
-        // 提取显示窗口
-        let mut result = String::with_capacity(display_width);
-        for i in 0..display_width {
-            let idx = (offset + i) % loop_len;
-            result.push_str(&loop_content[idx..=idx]);
+impl StringScroller {
+    const SEPARATOR_SPACES: usize = 5;
+
+    pub fn new(content: &str, display_width: usize) -> Self {
+        let content_chars_num = content.chars().count();
+        // NoLoop
+        if content_chars_num <= display_width as usize {
+            Self {
+                loop_content: content.to_string(),
+                display_width,
+                display_type: DisplayType::NoLoop,
+                char_boundaries: Vec::new(),
+                offset_max: 0,
+            }
+        } else {
+            // Loop
+            // 构建循环字符串
+            let mut loop_content =
+                String::with_capacity(content.len() * 2 + Self::SEPARATOR_SPACES);
+            loop_content.push_str(content);
+            loop_content.push_str(&" ".repeat(Self::SEPARATOR_SPACES));
+            loop_content.push_str(content);
+
+            // 最大能够接受的offset，使其能够完全显示，又不会超过边界
+            // 相当于在这里：{content}{SEPARATOR_SPACES}>|<{content}
+            let offset_max = content_chars_num + Self::SEPARATOR_SPACES;
+            // 收集全部有效的char边界->byte边界的序列
+            let char_boundaries: Vec<usize> =
+                loop_content.char_indices().map(|(i, _c)| i).collect();
+
+            Self {
+                loop_content,
+                display_width,
+                display_type: DisplayType::Loop,
+                char_boundaries,
+                offset_max,
+            }
         }
-        result
+    }
+
+    pub fn display(&self, offset: usize) -> &str {
+        match self.display_type {
+            DisplayType::NoLoop => self.display_no_loop(),
+            DisplayType::Loop => self.display_loop(offset),
+        }
+    }
+
+    fn display_no_loop(&self) -> &str {
+        &self.loop_content
+    }
+
+    fn display_loop(&self, offset: usize) -> &str {
+        // offset语义是char的边界而不是byte的边界
+        let char_start = offset % self.offset_max;
+        let byte_start = self.char_boundaries[char_start];
+        let byte_end = self.char_boundaries[min(
+            char_start + self.display_width,
+            self.char_boundaries.len() - 1,
+        )];
+
+        &self.loop_content[byte_start..byte_end]
     }
 }
 
@@ -67,12 +116,11 @@ pub fn create_progress_bar(
     // 设置样式
     pb.set_style(create_progress_bar_style());
 
-    // 初始文件名显示（字符偏移从0开始）
-    let formatted_name = format_filename_with_scroll(filename, 30, 0);
-
     // 设置消息（带序号和格式化后的文件名），当 total 未知时显示 `?`
-    let total_display = total.map(|t| t.to_string()).unwrap_or_else(|| "?".to_string());
-    let file_info = format!("[{:2}/{}] {}", index + 1, total_display, formatted_name);
+    let total_display = total
+        .map(|t| t.to_string())
+        .unwrap_or_else(|| "?".to_string());
+    let file_info = format!("[{:2}/{}] {}", index + 1, total_display, filename);
     pb.set_message(file_info);
 
     // 保存原始文件名作为状态（我们需要在下载时更新它）
@@ -89,15 +137,16 @@ pub fn create_progress_bar(
 /// `rx` 用于接收下载任务发送的已下载字节数；任务以固定频率刷新滚动文本并在下载完成后调用 finish
 pub fn spawn_progress_updater(
     pb: ProgressBar,
-    full_filename: String,
+    filename: String,
     prefix: String,
     total_size: u64,
     mut rx: mpsc::Receiver<u64>,
 ) -> JoinHandle<()> {
     tokio::spawn(async move {
+        let filename_scroller = StringScroller::new(&filename, 30);
         let mut downloaded: u64 = 0;
         let mut ticks: usize = 0;
-        let mut interval = tokio::time::interval(Duration::from_millis(50)); // 20Hz 刷新
+        let mut interval = tokio::time::interval(Duration::from_millis(TICK_INTERVAL_MS));
 
         loop {
             tokio::select! {
@@ -111,8 +160,7 @@ pub fn spawn_progress_updater(
                 }
                 _ = interval.tick() => {
                     ticks = ticks.wrapping_add(1);
-                    let character_offset = ticks as usize;
-                    let scrolled_name = format_filename_with_scroll(&full_filename, 30, character_offset);
+                    let scrolled_name = filename_scroller.display(ticks);
                     let msg = format!("{}{}", prefix, scrolled_name);
                     pb.set_message(msg);
                 }

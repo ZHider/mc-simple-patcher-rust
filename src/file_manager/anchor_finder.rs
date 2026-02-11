@@ -1,7 +1,6 @@
 //! 锚点搜索模块
 //! 实现锚点文件/文件夹的搜索和工作目录定位功能
 
-use anyhow::{Ok, Result};
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 
