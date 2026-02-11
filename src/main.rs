@@ -1,4 +1,7 @@
-use crate::utils::{downloader, logger};
+use crate::{
+    global_config::get_global_config,
+    utils::{downloader, logger},
+};
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use hex::ToHex;
@@ -60,9 +63,6 @@ async fn main() -> Result<()> {
 
     log::info!("Minecraft 简易补丁工具启动");
 
-    // 检查自更新
-    check_self_update(&args.config).await;
-
     let result = match args.command {
         Some(Commands::Generate { toml_file }) => {
             // 如果提供了 generate 子命令，则进入生成模式
@@ -93,23 +93,18 @@ async fn main() -> Result<()> {
 }
 
 /// 检查并执行自更新
-async fn check_self_update(config_path: &std::path::Path) {
+async fn check_self_update() {
     // 解析配置文件以检查是否有更新URL
-    match config::parse_config(config_path) {
-        Ok(config) => match utils::downloader::self_update::check_for_update(&config).await {
-            Ok(updated) => {
-                if updated {
-                    log::info!("程序已更新，请重新运行程序");
-                    std::process::exit(0);
-                }
+    let config = get_global_config();
+    match utils::downloader::self_update::check_for_update(config.as_ref()).await {
+        Ok(updated) => {
+            if updated {
+                log::info!("程序已更新，请重新运行程序");
+                std::process::exit(0);
             }
-            Err(e) => {
-                log::error!("自更新失败: {}", e);
-                crate::utils::print_error_chain(&e);
-            }
-        },
+        }
         Err(e) => {
-            log::error!("解析配置文件以检查更新失败: {}", e);
+            log::error!("自更新失败: {}", e);
             crate::utils::print_error_chain(&e);
         }
     }
@@ -135,21 +130,24 @@ async fn execute_with_config(config_path: &std::path::Path) -> Result<()> {
     let config = update_metadata(config_path).await?;
 
     // 初始化全局配置
-    global_config::init_global_config(&config)
-        .map_err(|_| anyhow::anyhow!("Failed to initialize global config"))?;
+    global_config::set_global_config(config);
+
+    // 检查自更新
+    check_self_update().await;
 
     pause_before_exit();
-    main_controller::execute_patch(&config).await
+    main_controller::execute_patch(get_global_config()).await
 }
 
 async fn update_metadata(config_path: &std::path::Path) -> Result<config::Config> {
     let config = config::parse_config(config_path)
         .with_context(|| format!("解析配置文件失败: {}", config_path.display()))?;
 
+    global_config::set_global_config(config.clone());
     let metadata_url = config.metadata_config.metadata.as_ref().unwrap();
     log::info!("尝试更新元数据: {}", metadata_url);
 
-    match downloader::download_file(metadata_url, config_path, true).await {
+    match downloader::update_metadata(config_path).await {
         Err(e) => {
             utils::print_error_chain(&e);
             Ok(config)

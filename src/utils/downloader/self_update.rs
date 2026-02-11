@@ -7,6 +7,7 @@ use std::fs;
 use std::path::Path;
 
 use crate::utils::downloader;
+use crate::utils::downloader::hash_check;
 
 /// 检查并执行自更新
 pub async fn check_for_update(config: &crate::config::Config) -> Result<bool> {
@@ -37,7 +38,7 @@ async fn perform_update(update_url: &str) -> Result<bool> {
     // 获取当前可执行文件路径
     let current_exe = env::current_exe().context("无法获取当前可执行文件路径")?;
 
-    log::debug!("当前可执行文件路径: {:?}", current_exe);
+    log::debug!("当前可执行文件路径: {}", current_exe.display());
 
     // 下载新版本到临时文件
     let temp_dir = env::temp_dir();
@@ -51,15 +52,15 @@ async fn perform_update(update_url: &str) -> Result<bool> {
 
     log::debug!("下载更新到临时文件: {:?}", temp_file);
 
-    // 下载更新文件
-    let downloaded = downloader::download_file_lazy(update_url, &temp_file)
-        .await
-        .context(format!("下载更新文件失败: {}", update_url))?;
-
-    if !downloaded {
+    if let Some(true) = check_neednot_update(update_url, &current_exe).await? {
         log::debug!("文件已存在且完整，或者未能检测到远程SHA256，跳过下载");
         return Ok(false);
     }
+
+    // 下载更新文件
+    downloader::download_file(update_url, &temp_file, false)
+        .await
+        .context(format!("下载更新文件失败: {}", update_url))?;
 
     // 替换当前可执行文件
     replace_executable(&current_exe, &temp_file).context("替换可执行文件失败")?;
@@ -67,6 +68,10 @@ async fn perform_update(update_url: &str) -> Result<bool> {
     log::info!("成功更新可执行文件");
 
     Ok(true)
+}
+
+async fn check_neednot_update(url: &str, dest_path: &Path) -> Result<Option<bool>> {
+    hash_check::check_file_integrity(url, dest_path).await
 }
 
 /// 替换当前可执行文件

@@ -11,6 +11,7 @@ use regex::Regex;
 use std::{
     collections::HashSet,
     path::{Path, PathBuf},
+    sync::Arc,
 };
 
 use rayon::prelude::*;
@@ -19,7 +20,7 @@ use rayon::prelude::*;
 pub const DEFAULT_MAX_DEPTH: usize = 5;
 
 /// 执行补丁操作
-pub async fn execute_patch(config: &Config) -> Result<()> {
+pub async fn execute_patch(config: Arc<Config>) -> Result<()> {
     log::info!("开始执行补丁操作");
     log::debug!("当前有 {} 个组需要处理", config.groups.len());
 

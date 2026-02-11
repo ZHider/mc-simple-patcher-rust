@@ -58,7 +58,6 @@ async fn download_file_internal(
     url: &str,
     dest_path: &Path,
     check_sha256: bool,
-    stop_when_check_failed: bool,
     progress_bar: Option<&ProgressBar>,
 ) -> Result<bool> {
     // 检查文件是否已存在且完整
@@ -76,7 +75,7 @@ async fn download_file_internal(
                 return Ok(false);
             }
             // 检查失败，不知道文件是否完整
-            None if stop_when_check_failed => return Ok(false),
+            None => return Ok(false),
             // 其他情况直接继续
             _ => {}
         }
@@ -101,14 +100,16 @@ async fn download_file_internal(
     }
 }
 
-/// 简单的单文件下载
-pub async fn download_file(url: &str, dest_path: &Path, check_sha256: bool) -> Result<bool> {
-    download_file_internal(url, dest_path, check_sha256, false, None).await
+/// 更新metadata
+pub async fn update_metadata(dest_path: &Path) -> Result<bool> {
+    let config = get_global_config();
+    let metadata = config.metadata_config.metadata.as_deref().unwrap();
+    download_file_internal(metadata, dest_path, true, None).await
 }
 
-/// 只有sha256不对的时候才下载文件
-pub async fn download_file_lazy(url: &str, dest_path: &Path) -> Result<bool> {
-    download_file_internal(url, dest_path, true, true, None).await
+/// 单文件下载
+pub async fn download_file(url: &str, dest_path: &Path, check_sha256: bool) -> Result<bool> {
+    download_file_internal(url, dest_path, check_sha256, None).await
 }
 
 /// 使用 indicatif 多进度条批量下载文件，接受迭代器
@@ -158,7 +159,6 @@ where
                 &task.url,
                 &task.dest_path,
                 task.check_sha256,
-                false,
                 Some(&progress_bar),
             )
             .await?;

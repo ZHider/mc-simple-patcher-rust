@@ -1,4 +1,5 @@
 use std::fs;
+use std::sync::Arc;
 use tempfile::TempDir;
 use mc_simple_patcher::config;
 use mc_simple_patcher::main_controller;
@@ -40,7 +41,7 @@ async fn test_full_workflow() {
     let parsed_config = config::parse_config(&config_path).expect("解析配置失败");
 
     // 直接调用执行函数
-    let result: Result<(), anyhow::Error> = main_controller::execute_patch(&parsed_config).await;
+    let result: Result<(), anyhow::Error> = main_controller::execute_patch(Arc::new(parsed_config)).await;
 
     // 不检查结果是否成功，因为下载可能因网络问题而失败
     // 我们只测试程序是否能正常执行而不崩溃

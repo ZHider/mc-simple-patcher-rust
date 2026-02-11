@@ -5,4 +5,4 @@ pub mod file_manager;
 pub mod global_config;
 pub mod utils;
 
-pub use global_config::{get_global_config, init_global_config};
+pub use global_config::{get_global_config, set_global_config};
