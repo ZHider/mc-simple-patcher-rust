@@ -1,5 +1,5 @@
 use crate::utils::{downloader, logger};
-use anyhow::{Context, Ok, Result};
+use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use hex::ToHex;
 use std::path::PathBuf;
@@ -117,12 +117,17 @@ async fn update_metadata(config_path: &std::path::Path) -> Result<config::Config
     let metadata_url = config.metadata_config.metadata.as_ref().unwrap();
     log::info!("尝试更新元数据: {}", metadata_url);
 
-    if let Err(e) = downloader::download_file(metadata_url, config_path, true).await {
-        log::error!("更新失败！{}", e);
-        Ok(config)
-    } else {
-        log::info!("元数据文件已更新: {}", config_path.display());
-        // 重新解析配置文件
-        config::parse_config(config_path)
+    match downloader::download_file(metadata_url, config_path, true).await {
+        Err(e) => {
+            log::error!("更新失败！{}", e);
+            Ok(config)
+        }
+        // 元数据文件已是最新无需下载和重新解析
+        Ok(false) => Ok(config),
+        Ok(true) => {
+            log::info!("元数据文件已更新: {}", config_path.display());
+            // 重新解析配置文件
+            config::parse_config(config_path)
+        }
     }
 }

@@ -77,6 +77,7 @@ pub async fn check_file_integrity(url: &str, dest_path: &Path) -> Result<bool> {
     if let Some(remote_sha256_val) = remote_sha256 {
         // 计算本地文件的SHA256哈希值
         let local_sha256 = utils::calculate_file_sha256(dest_path)?;
+        let local_sha256 = hex::encode(local_sha256);
 
         if local_sha256 == remote_sha256_val {
             log::info!("文件已是最新版本: {}", dest_path.display());

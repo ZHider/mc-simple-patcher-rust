@@ -22,11 +22,11 @@ pub struct DownloadTask {
 }
 
 /// 简单的单文件下载
-pub async fn download_file(url: &str, dest_path: &Path, check_sha256: bool) -> Result<()> {
+pub async fn download_file(url: &str, dest_path: &Path, check_sha256: bool) -> Result<bool> {
     // 检查文件是否已存在且完整
     if check_sha256 && hash_check::check_file_integrity(url, dest_path).await? {
         log::info!("跳过下载，文件已是最新版本: {}", dest_path.display());
-        return Ok(());
+        return Ok(false);
     }
 
     let client = reqwest::Client::new();
@@ -50,7 +50,7 @@ pub async fn download_file(url: &str, dest_path: &Path, check_sha256: bool) -> R
     }
 
     log::info!("下载完成: {}", dest_path.display());
-    Ok(())
+    Ok(true)
 }
 
 /// 使用 indicatif 多进度条批量下载文件，接受迭代器
