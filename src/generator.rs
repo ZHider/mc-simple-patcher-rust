@@ -92,7 +92,7 @@ fn extract_generate_rules(
     generate_config
         .get("generate")
         .and_then(|v| v.as_array())
-        .ok_or_else(|| anyhow::anyhow!("生成规则文件中缺少 generate 数组"))?
+        .context("生成规则文件中缺少 generate 数组")?
         .iter()
         .map(|v| {
             let rule_map = v.as_object().context("生成规则必须是 Table")?;

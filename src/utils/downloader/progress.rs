@@ -1,5 +1,6 @@
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use std::cmp::min;
+use std::sync::LazyLock;
 use std::time::Duration;
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
@@ -14,14 +15,6 @@ pub fn setup_multi_progress() -> MultiProgress {
         PROGRESS_BAR_REFREST_RATE,
     ));
     multi_progress
-}
-
-/// 创建进度条样式
-pub fn create_progress_bar_style() -> ProgressStyle {
-    ProgressStyle::default_bar()
-        .template("{msg} {bar:30.cyan/blue} {bytes}/{total_bytes} ({eta})")
-        .unwrap()
-        .progress_chars("=>-")
 }
 
 pub struct StringScroller {
@@ -45,8 +38,9 @@ impl StringScroller {
         let content_chars_num = content.chars().count();
         // NoLoop
         if content_chars_num <= display_width as usize {
+            let loop_content = format!("{:<width$}", content, width = display_width);
             Self {
-                loop_content: content.to_string(),
+                loop_content: loop_content,
                 display_width,
                 display_type: DisplayType::NoLoop,
                 char_boundaries: Vec::new(),
@@ -102,6 +96,27 @@ impl StringScroller {
     }
 }
 
+static PB_WAITING_STYLE: LazyLock<ProgressStyle> = std::sync::LazyLock::new(|| {
+    ProgressStyle::default_bar()
+        .template("{spinner} {msg} {total_bytes}")
+        .unwrap()
+        .progress_chars("  ")
+});
+
+static PB_FINISHED_STYLE: LazyLock<ProgressStyle> = std::sync::LazyLock::new(|| {
+    ProgressStyle::default_bar()
+        .template("{msg} [{elapsed_precise}] {total_bytes}")
+        .unwrap()
+        .progress_chars("  ")
+});
+
+static PB_DOWNLOADING_STYLE: LazyLock<ProgressStyle> = std::sync::LazyLock::new(|| {
+    ProgressStyle::default_bar()
+        .template("{msg} {bar:50.cyan/blue} {bytes}/{total_bytes} ({eta})")
+        .unwrap()
+        .progress_chars("=>-")
+});
+
 /// 创建和配置进度条
 pub fn create_progress_bar(
     multi_progress: &MultiProgress,
@@ -114,13 +129,18 @@ pub fn create_progress_bar(
     let pb = multi_progress.add(ProgressBar::new(initial_length));
 
     // 设置样式
-    pb.set_style(create_progress_bar_style());
+    pb.set_style(PB_WAITING_STYLE.clone());
 
     // 设置消息（带序号和格式化后的文件名），当 total 未知时显示 `?`
     let total_display = total
         .map(|t| t.to_string())
         .unwrap_or_else(|| "?".to_string());
-    let file_info = format!("[{:2}/{}] {}", index + 1, total_display, filename);
+    let file_info = format!(
+        "[{:2}/{}] 开始下载 {}\t",
+        index + 1,
+        total_display,
+        filename
+    );
     pb.set_message(file_info);
 
     // 保存原始文件名作为状态（我们需要在下载时更新它）
@@ -147,6 +167,7 @@ pub fn spawn_progress_updater(
         let mut downloaded: u64 = 0;
         let mut ticks: usize = 0;
         let mut interval = tokio::time::interval(Duration::from_millis(TICK_INTERVAL_MS));
+        pb.set_style(PB_DOWNLOADING_STYLE.clone());
 
         loop {
             tokio::select! {
@@ -167,6 +188,7 @@ pub fn spawn_progress_updater(
             }
         }
 
-        pb.finish_with_message(format!("{}✓", prefix));
+        pb.set_style(PB_FINISHED_STYLE.clone());
+        pb.finish_with_message(format!("{}✓完成 {}", prefix, filename));
     })
 }

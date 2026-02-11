@@ -1,13 +1,13 @@
 mod hash_check;
-mod progress;
 mod helpers;
+mod progress;
 
 use anyhow::{Context, Result};
-use futures::{StreamExt, TryStreamExt, AsyncReadExt};
+use futures::{AsyncReadExt, StreamExt, TryStreamExt};
+use helpers::{ensure_success_response, get_file_length, get_file_size};
 use indicatif::ProgressBar;
 use progress::{create_progress_bar, setup_multi_progress, spawn_progress_updater};
 use reqwest::{self};
-use helpers::{get_file_length, get_file_size, ensure_success_response};
 use std::io::{Error, ErrorKind};
 use std::path::Path;
 // Duration not needed here; kept in progress.rs
@@ -70,7 +70,13 @@ where
 
     // 并发数：若已知 total 则取 min(total,6)，否则默认使用 6
     let concurrency = match total_opt {
-        Some(t) => if t >= 6 { 6 } else { t },
+        Some(t) => {
+            if t >= 6 {
+                6
+            } else {
+                t
+            }
+        }
         None => 6,
     };
 
@@ -93,13 +99,8 @@ where
             let _ = get_file_size(&task.url).await.ok();
 
             // 执行下载并返回结果
-            download_file_with_progress(
-                &task.url,
-                &task.dest_path,
-                task.check_sha256,
-                progress_bar,
-            )
-            .await
+            download_file_with_progress(&task.url, &task.dest_path, task.check_sha256, progress_bar)
+                .await
         }
     }));
 
@@ -116,7 +117,6 @@ where
     log::info!("所有文件下载完成！");
     Ok(())
 }
-
 
 /// 带进度条的异步文件下载（支持长文件名滚动显示）
 async fn download_file_with_progress(
@@ -174,14 +174,23 @@ async fn download_file_with_progress(
     let total_size_updater = total_size;
 
     // 更新任务：定期刷新进度和滚动文本，传入接收端
-    let updater_handle = spawn_progress_updater(pb_updater, full_name_updater, prefix_updater, total_size_updater, rx);
+    let updater_handle = spawn_progress_updater(
+        pb_updater,
+        full_name_updater,
+        prefix_updater,
+        total_size_updater,
+        rx,
+    );
 
     // 下载任务：读取网络数据并写入文件，同时把已读字节数发送给更新任务
     let mut buffer = vec![0u8; 4096];
     loop {
         match response_body.read(&mut buffer).await {
             Ok(n) if n > 0 => {
-                dest_file.write_all(&buffer[..n]).await.context("写入文件失败")?;
+                dest_file
+                    .write_all(&buffer[..n])
+                    .await
+                    .context("写入文件失败")?;
                 let chunk_len = n as u64;
                 // 发送到更新任务；若接收方已关闭则忽略错误
                 let _ = tx.send(chunk_len).await;
@@ -221,4 +230,3 @@ fn extract_full_filename(dest_path: &Path) -> String {
 }
 
 // spawn_progress_updater 已移动到 progress.rs，实现 UI 更新逻辑。
-

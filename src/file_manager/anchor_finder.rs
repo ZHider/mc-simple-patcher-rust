@@ -65,7 +65,6 @@ pub fn find_anchor_optimized(
 
 /// 检查特殊的目录结构
 fn check_special_structures(anchor_name: &str, start_dir: &Path) -> Option<PathBuf> {
-
     /// 进行最大深度为2的广度优先搜索，查看anchor文件是否在`.minecraft\versions\{Mod Pack Name}`目录下。
     fn has_mc_vers_dir(anchor_name: &str, start_dir: &Path) -> Option<PathBuf> {
         let versions_path = start_dir.join(".minecraft").join("versions");
@@ -120,7 +119,6 @@ fn check_special_structures(anchor_name: &str, start_dir: &Path) -> Option<PathB
         log::debug!("找到APPDATA路径: {}", appdata.display());
         has_mc_vers_dir(anchor_name, Path::new(&appdata))
     })
-    
 }
 
 /// 在指定目录下进行广度优先搜索，寻找anchor文件
