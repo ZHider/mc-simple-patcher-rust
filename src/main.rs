@@ -117,9 +117,9 @@ async fn update_metadata(config_path: &std::path::Path) -> Result<config::Config
     let metadata_url = config.metadata_config.metadata.as_ref().unwrap();
     log::info!("尝试更新元数据: {}", metadata_url);
 
-    match downloader::download_file(metadata_url, config_path, true).await {
+    match downloader::download_file(metadata_url, config_path, true, config.network).await {
         Err(e) => {
-            log::error!("更新失败！{}", e);
+            utils::print_error_chain(&e);
             Ok(config)
         }
         // 元数据文件已是最新无需下载和重新解析

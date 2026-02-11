@@ -12,6 +12,7 @@
 - **.disabled 文件**：自动检测并恢复被禁用的模组文件
 - **配置文件生成**：根据规则自动生成配置文件
 - **SHA256计算**：通过命令行参数调用计算文件SHA256功能
+- **QUIC/HTTP/3 支持**：可选择使用 QUIC 协议进行更快的下载
 
 ## Why is this？
 
@@ -106,6 +107,21 @@ mc_simple_patcher.exe generate <input.toml>
 ### 配置文件格式
 
 关于如何书写配置文件，请查阅 [示例文件 example.toml](./example.toml)
+
+#### 网络配置
+
+您可以使用 `[network]` 部分来配置网络相关选项：
+
+```toml
+[network]
+# 是否强制切换到quic，只走UDP协议
+quic = false
+# 是否忽略证书错误（对于自签名证书等情况）
+ignore_invalid_cert = true
+```
+
+- `quic`: 启用 HTTP/3 协议进行下载（默认为 false）
+- `ignore_invalid_cert`: 忽略 SSL 证书错误（默认为 false）
 
 ## 源代码相关
 

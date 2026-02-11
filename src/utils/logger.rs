@@ -32,18 +32,18 @@ impl DualLogger {
 impl log::Log for DualLogger {
     fn enabled(&self, metadata: &Metadata) -> bool {
         if self.debug {
-            metadata.level() <= log::Level::Debug
+            metadata.level() <= log::Level::Trace
         } else {
             metadata.level() <= log::Level::Info
         }
     }
 
     fn log(&self, record: &Record) {
-        if let Some(mp) = record.module_path()
-            && mp == "reqwest::connect"
-        {
-            return;
-        }
+        // if let Some(mp) = record.module_path()
+        //     && mp == "reqwest::connect"
+        // {
+        //     return;
+        // }
         if self.enabled(record.metadata()) {
             use console::Style;
 
@@ -55,7 +55,12 @@ impl log::Log for DualLogger {
                 }
                 log::Level::Debug => {
                     let style = Style::new().yellow();
-                    format!("{}", style.apply_to("[DEBUG]"))
+                    format!(
+                        "{} [{}:{}]",
+                        style.apply_to("[DEBUG]"),
+                        record.module_path().unwrap_or("unknown"),
+                        record.line().unwrap_or(0),
+                    )
                 }
                 log::Level::Error => {
                     let style = Style::new().red();
@@ -68,12 +73,11 @@ impl log::Log for DualLogger {
                 _ => format!("[{}]", record.level()),
             };
 
-            println!(
-                "{} {}",
-                // record.module_path().unwrap_or(""),
-                level_tag,
-                record.args()
-            );
+            if record.level() == log::Level::Error {
+                eprintln!("{} {}", level_tag, record.args());
+            } else {
+                println!("{} {}", level_tag, record.args());
+            }
 
             // 同时写入日志文件
             if let Ok(mut file) = self.file.lock() {

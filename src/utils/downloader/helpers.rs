@@ -19,17 +19,6 @@ pub fn get_file_length(resp: &Response) -> Result<u64> {
     }
 }
 
-/// 发送 HEAD 请求获取远程文件大小
-pub async fn get_file_size(url: &str) -> Result<u64> {
-    let client = reqwest::Client::new();
-    let response = client
-        .head(url)
-        .send()
-        .await
-        .context(format!("无法发送HEAD请求到: {}", url))?;
-
-    get_file_length(&response)
-}
 
 /// 确保响应成功
 pub fn ensure_success_response(response: &reqwest::Response) -> Result<()> {

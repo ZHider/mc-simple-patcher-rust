@@ -4,15 +4,44 @@ mod progress;
 
 use anyhow::{Context, Result};
 use futures::{AsyncReadExt, StreamExt, TryStreamExt};
-use helpers::{ensure_success_response, get_file_length, get_file_size};
+use helpers::{ensure_success_response, get_file_length};
 use indicatif::ProgressBar;
 use progress::{create_progress_bar, setup_multi_progress, spawn_progress_updater};
 use reqwest::{self};
 use std::io::{Error, ErrorKind};
 use std::path::Path;
 // Duration not needed here; kept in progress.rs
+use crate::config::NetworkConfig;
 use tokio::io::AsyncWriteExt;
 use tokio::sync::mpsc;
+
+/// 根据网络配置创建HTTP客户端
+pub fn create_http_client(network_config: Option<NetworkConfig>) -> Result<reqwest::Client> {
+    let mut builder = reqwest::ClientBuilder::new();
+
+    if let Some(config) = network_config {
+        if config.quic {
+            // 使用HTTP/3协议
+            builder = builder.http3_prior_knowledge();
+        }
+
+        // 是否验证TLS证书
+        builder = builder.tls_danger_accept_invalid_certs(config.ignore_invalid_cert);
+    }
+
+    Ok(builder.build()?)
+}
+
+/// 为请求添加版本信息（如果需要）
+fn configure_request_version(request: reqwest::RequestBuilder, network_config: &Option<NetworkConfig>) -> reqwest::RequestBuilder {
+    if let Some(config) = network_config {
+        if config.quic {
+            // 显式指定使用HTTP/3版本
+            return request.version(reqwest::Version::HTTP_3);
+        }
+    }
+    request
+}
 
 /// 下载任务结构
 pub struct DownloadTask {
@@ -22,16 +51,22 @@ pub struct DownloadTask {
 }
 
 /// 简单的单文件下载
-pub async fn download_file(url: &str, dest_path: &Path, check_sha256: bool) -> Result<bool> {
+pub async fn download_file(
+    url: &str,
+    dest_path: &Path,
+    check_sha256: bool,
+    network_config: Option<NetworkConfig>,
+) -> Result<bool> {
     // 检查文件是否已存在且完整
-    if check_sha256 && hash_check::check_file_integrity(url, dest_path).await? {
+    if check_sha256 && hash_check::check_file_integrity(url, dest_path, network_config).await? {
         log::info!("跳过下载，文件已是最新版本: {}", dest_path.display());
         return Ok(false);
     }
 
-    let client = reqwest::Client::new();
-    let response = client
-        .get(url)
+    let client = create_http_client(network_config)?;
+    let request = client.get(url);
+    let configured_request = configure_request_version(request, &network_config);
+    let response = configured_request
         .send()
         .await
         .context(format!("无法发送请求到: {}", url))?;
@@ -54,7 +89,10 @@ pub async fn download_file(url: &str, dest_path: &Path, check_sha256: bool) -> R
 }
 
 /// 使用 indicatif 多进度条批量下载文件，接受迭代器
-pub async fn download_files_with_progress<I>(tasks: I) -> Result<()>
+pub async fn download_files_with_progress<I>(
+    tasks: I,
+    network_config: Option<NetworkConfig>,
+) -> Result<()>
 where
     I: IntoIterator<Item = DownloadTask>,
 {
@@ -95,12 +133,15 @@ where
         let progress_bar = create_progress_bar(&multi_progress, None, idx, total_copy, &filename);
 
         async move {
-            // 异步在任务内查询文件大小（可选）
-            let _ = get_file_size(&task.url).await.ok();
-
             // 执行下载并返回结果
-            download_file_with_progress(&task.url, &task.dest_path, task.check_sha256, progress_bar)
-                .await
+            download_file_with_progress(
+                &task.url,
+                &task.dest_path,
+                task.check_sha256,
+                progress_bar,
+                network_config,
+            )
+            .await
         }
     }));
 
@@ -124,20 +165,22 @@ async fn download_file_with_progress(
     dest_path: &Path,
     check_sha256: bool,
     pb: ProgressBar,
+    network_config: Option<NetworkConfig>,
 ) -> Result<()> {
     let prefix = extract_prefix_from_pb(&pb);
     let full_filename = extract_full_filename(dest_path);
 
     // 检查文件是否已存在且完整
-    if check_sha256 && hash_check::check_file_integrity(url, dest_path).await? {
+    if check_sha256 && hash_check::check_file_integrity(url, dest_path, network_config).await? {
         log::debug!("跳过: 文件已是最新版本");
         pb.finish_with_message(format!("{}✓ 已跳过", prefix));
         return Ok(());
     }
 
-    let client = reqwest::Client::new();
-    let response = client
-        .get(url)
+    let client = create_http_client(network_config)?;
+    let request = client.get(url);
+    let configured_request = configure_request_version(request, &network_config);
+    let response = configured_request
         .send()
         .await
         .context(format!("无法发送请求到: {}", url))?;
@@ -230,3 +273,39 @@ fn extract_full_filename(dest_path: &Path) -> String {
 }
 
 // spawn_progress_updater 已移动到 progress.rs，实现 UI 更新逻辑。
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::NetworkConfig;
+
+    #[test]
+    fn test_create_http_client_default() {
+        let network_config = None;
+        let client = create_http_client(network_config).expect("Client creation failed");
+        // 确保客户端创建成功
+        assert!(!format!("{:?}", client).is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_create_http_client_quic_enabled() {
+        let network_config = Some(NetworkConfig {
+            quic: true,
+            ignore_invalid_cert: false,
+        });
+        let client = create_http_client(network_config).expect("Client creation failed");
+        // 确保客户端创建成功
+        assert!(!format!("{:?}", client).is_empty());
+    }
+
+    #[test]
+    fn test_create_http_client_ignore_cert() {
+        let network_config = Some(NetworkConfig {
+            quic: false,
+            ignore_invalid_cert: true,
+        });
+        let client = create_http_client(network_config).expect("Client creation failed");
+        // 确保客户端创建成功
+        assert!(!format!("{:?}", client).is_empty());
+    }
+}

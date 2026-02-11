@@ -4,6 +4,12 @@ metadata = "http://example.com/metadata.toml"
 # 版本号，目前仅作为标识作用
 version = 0
 
+[network]
+# 是否强制切换到quic，只走UDP协议
+quic = false
+# 是否忽略证书错误
+ignore_invalid_cert = true
+
 [[groups]]
 
 # 锚点文件/文件夹，用于定位工作目录
@@ -56,3 +62,4 @@ url = "https://example.com/files/lucky_hat-1.0.2.jar"
 # 这里的 name 不是必须的，但 toml 里仍然可以写注释，比 json 好得多不是嘛？
 # name = "tac-0.3.10.1-1.18.2.jar"
 sha256 = "24232e4500aa3385923ad3947bec8443dc4f04c9cf17c2f94521dcfcd3a1bc20"
+url = "https://example.com/files/tac-0.3.10.1-1.18.2.jar"

@@ -31,7 +31,8 @@ pub fn calculate_file_sha256(file_path: &Path) -> Result<Bytes> {
 
 /// 打印完整的错误信息和错误链
 pub fn print_error_chain(err: &Error) {
-    log::error!("\n=== 错误信息链（Caused by）===");
+    eprintln!();
+    log::error!(" === 错误信息链（Caused by）===");
     err.chain().enumerate().for_each(|(i, cause)| {
         log::error!("  {}. {}", i + 1, cause);
     });

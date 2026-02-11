@@ -41,11 +41,35 @@ pub struct GroupConfig {
     pub files: Vec<FileRule>,
 }
 
+/// 网络配置
+#[derive(Serialize, Deserialize, Debug, Clone, Copy)]
+pub struct NetworkConfig {
+    #[serde(default)]
+    pub quic: bool,
+    #[serde(default = "default_ignore_invalid_cert")]
+    pub ignore_invalid_cert: bool,
+}
+
+impl Default for NetworkConfig {
+    fn default() -> Self {
+        Self {
+            quic: false,
+            ignore_invalid_cert: false,
+        }
+    }
+}
+
+fn default_ignore_invalid_cert() -> bool {
+    true
+}
+
 /// 主配置结构
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Config {
     #[serde(flatten)]
     pub metadata_config: MetadataConfig,
+    #[serde(default)]
+    pub network: Option<NetworkConfig>,
     pub groups: Vec<GroupConfig>,
 }
 
@@ -59,6 +83,15 @@ pub fn parse_config<P: AsRef<Path>>(path: P) -> Result<Config> {
 
 /// 验证配置的有效性
 fn validate_config(config: &Config) -> Result<()> {
+    if let Some(network_config) = config.network {
+        if network_config.quic {
+            log::warn!("已开启 HTTP3/QUIC/UDP 协议！");
+        }
+        if network_config.ignore_invalid_cert {
+            log::warn!("已经关闭证书验证，您的通讯可能更容易遭受 MITM 攻击！");
+        }
+    }
+
     for group in &config.groups {
         if group.anchor.is_empty() {
             anyhow::bail!("Anchor path cannot be empty in group");
@@ -128,6 +161,7 @@ mod tests {
                 metadata: Some("Test Modpack".to_string()),
                 version: Some(1),
             },
+            network: Some(NetworkConfig::default()),
             groups: vec![GroupConfig {
                 anchor: "mods".to_string(),
                 root: "./mods".to_string(),

@@ -2,7 +2,7 @@
 //! 协调各个模块的工作
 
 use crate::{
-    config::{Config, GroupConfig},
+    config::{Config, GroupConfig, NetworkConfig},
     file_manager::{self, anchor_finder, modinfo_cache::ModInfoCache},
     utils::downloader::{DownloadTask, download_files_with_progress},
 };
@@ -25,7 +25,7 @@ pub async fn execute_patch(config: &Config) -> Result<()> {
 
     for (index, group) in config.groups.iter().enumerate() {
         log::debug!("处理第 {} 个组，anchor: {}", index, group.anchor);
-        process_group(group).await?;
+        process_group(group, config.network).await?;
     }
 
     log::info!("补丁操作完成");
@@ -33,7 +33,7 @@ pub async fn execute_patch(config: &Config) -> Result<()> {
 }
 
 /// 处理单个组
-async fn process_group(group: &GroupConfig) -> Result<()> {
+async fn process_group(group: &GroupConfig, network_config: Option<NetworkConfig>) -> Result<()> {
     log::info!("处理组: anchor={}", group.anchor);
     log::debug!("组配置: {:?}", group);
 
@@ -87,6 +87,7 @@ async fn process_group(group: &GroupConfig) -> Result<()> {
         &work_dir,
         modinfo_cache,
         &mut processd_file,
+        network_config,
     )
     .await?;
 
@@ -144,6 +145,7 @@ async fn sync_files(
     work_dir: &Path,
     modinfo_cache: ModInfoCache,
     files_left_from_existing: &mut Option<HashSet<PathBuf>>,
+    network_config: Option<NetworkConfig>,
 ) -> Result<()> {
     log::info!("正准备同步 {} 个文件……", group.files.len());
 
@@ -177,7 +179,7 @@ async fn sync_files(
     }
 
     if !files_needs_download.is_empty() {
-        download_files_with_progress(files_needs_download.into_iter())
+        download_files_with_progress(files_needs_download.into_iter(), network_config)
             .await
             .context("批量下载文件时出错……")?;
     }
@@ -204,7 +206,7 @@ async fn build_file_downloadinfo(
         Ok(Some(DownloadTask {
             url: file_rule.url.clone(),
             dest_path,
-            check_sha256: false,
+            check_sha256: file_rule.sha256.is_some(), // 如果配置中有SHA256，则启用校验
         }))
     }
 }

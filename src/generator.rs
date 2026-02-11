@@ -121,6 +121,7 @@ fn load_base_config(
                     .and_then(|v| v.as_u64())
                     .map(|v| v as u32),
             },
+            network: Some(crate::config::NetworkConfig::default()),
             groups: vec![],
         })
     } else {
@@ -142,6 +143,7 @@ fn load_base_config(
                             metadata: None,
                             version: Some(0),
                         },
+                        network: Some(crate::config::NetworkConfig::default()),
                         groups: vec![],
                     })
                 }
@@ -153,6 +155,7 @@ fn load_base_config(
                     metadata: None,
                     version: Some(0),
                 },
+                network: Some(crate::config::NetworkConfig::default()),
                 groups: vec![],
             })
         }
