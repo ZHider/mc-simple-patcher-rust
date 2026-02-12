@@ -6,10 +6,10 @@ use indicatif::ProgressBar;
 use rayon::iter::ParallelIterator;
 use std::{
     collections::{HashMap, HashSet},
+    io::Read,
     path::Path,
     sync::{Arc, Mutex},
 };
-use zip::ZipArchive;
 
 pub struct ModInfoCache {
     pub sha256: HashSet<Bytes>,
@@ -125,42 +125,73 @@ pub fn extract_mod_info_from_jar(jar_path: &Path) -> Result<(String, String)> {
     use std::fs::File;
     use zip::ZipArchive;
 
+    /// 在ZIP存档中查找 fabric.mod.json 文件
+    fn extract_fabric_mod(archive: &mut ZipArchive<std::fs::File>) -> Result<(String, String)> {
+        let mut file = archive
+            .by_name("fabric.mod.json")
+            .context("JAR 文件中未找到 fabric.mod.json")?;
+        let mut content = String::new();
+        file.read_to_string(&mut content)?;
+        let content: String = content.chars().filter(|c| !c.is_control()).collect();
+
+        // 解析json内容
+        let json_value: HashMap<String, serde_json::Value> = serde_json::from_str(&content)?;
+        let mod_id = json_value
+            .get("id")
+            .context("无法从 JSON 中提取 id")?
+            .as_str()
+            .context("id 键的值类型不是 str")?
+            .to_owned();
+        let mod_version = json_value
+            .get("version")
+            .context("无法从 JSON 中提取 version")?
+            .as_str()
+            .context("version 键的值类型不是 str")?
+            .to_owned();
+
+        Ok((mod_id, mod_version))
+    }
+
+    /// 在ZIP存档中查找 mods.toml 文件
+    fn extract_forge_mod(archive: &mut ZipArchive<std::fs::File>) -> Result<(String, String)> {
+        let mut file = archive
+            .by_name("META-INF/mods.toml")
+            .context("JAR 文件中未找到 META-INF/mods.toml")?;
+
+        let mut content = String::new();
+        file.read_to_string(&mut content)?;
+
+        // 解析 toml 内容
+        let toml_value: toml::Value = toml::from_str(&content)?;
+        // log::debug!("解析 mods.toml 内容: {:?}", toml_value);
+
+        // 提取 mod_id 和 version
+        let mod_base = toml_value
+            .get("mods")
+            .and_then(|mods| mods.get(0))
+            .context("mods.toml 格式不正确，缺少 mods 部分")?;
+
+        let mod_id = mod_base
+            .get("modId")
+            .and_then(|id| id.as_str())
+            .context("无法从 mods.toml 中提取 modId")?
+            .to_owned();
+
+        let mod_version = mod_base
+            .get("version")
+            .and_then(|ver| ver.as_str())
+            .context("无法从 mods.toml 中提取 version")?
+            .to_owned();
+
+        Ok((mod_id, mod_version))
+    }
+
     let file = File::open(jar_path)?;
     let mut archive = ZipArchive::new(file)?;
 
-    // 查找 META-INF/mods.toml 文件
-    let mods_toml_content = find_mods_toml_in_archive(&mut archive)?;
-
-    // 解析 toml 内容
-    let toml_value: toml::Value = toml::from_str(&mods_toml_content)?;
-    // log::debug!("解析 mods.toml 内容: {:?}", toml_value);
-
-    // 提取 mod_id 和 version
-    let mod_base = toml_value
-        .get("mods")
-        .and_then(|mods| mods.get(0))
-        .context("mods.toml 格式不正确，缺少 mods 部分")?;
-
-    let mod_id = mod_base
-        .get("modId")
-        .and_then(|id| id.as_str())
-        .context("无法从 mods.toml 中提取 modId")?;
-
-    let mod_version = mod_base
-        .get("version")
-        .and_then(|ver| ver.as_str())
-        .context("无法从 mods.toml 中提取 version")?;
-
-    Ok((mod_id.to_string(), mod_version.to_string()))
-}
-
-/// 在ZIP存档中查找mods.toml文件
-fn find_mods_toml_in_archive(archive: &mut ZipArchive<std::fs::File>) -> Result<String> {
-    let mut file = archive
-        .by_name("META-INF/mods.toml")
-        .context("JAR 文件中未找到 META-INF/mods.toml")?;
-
-    let mut content = String::new();
-    std::io::Read::read_to_string(&mut file, &mut content)?;
-    Ok(content)
+    extract_forge_mod(&mut archive)
+        .context("Forge模式MOD信息提取失败！")
+        .or_else(|e| extract_fabric_mod(&mut archive).context(e))
+        .context("Fabric模式MOD信息提取失败！")
+        .or_else(|e| return Err(e))
 }

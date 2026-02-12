@@ -31,10 +31,14 @@ pub fn calculate_file_sha256(file_path: &Path) -> Result<Bytes> {
 
 /// 打印完整的错误信息和错误链
 pub fn print_error_chain(err: &Error) {
-    eprintln!();
-    log::error!(" === 错误信息链（Caused by）===");
+    log::error!("{}", format_error_chain(err));
+}
+
+pub fn format_error_chain(err: &Error) -> String {
+    let mut result = "\n === 错误信息链（Caused by）===\n".to_string();
     err.chain().enumerate().for_each(|(i, cause)| {
-        log::error!("  {}. {}", i + 1, cause);
+        result.push_str(format!("  {}. {}\n", i + 1, cause).as_str());
     });
-    log::error!("\n{}\n", "-".repeat(50));
+    result.push_str(format!("\n{}\n", "-".repeat(50)).as_str());
+    result
 }

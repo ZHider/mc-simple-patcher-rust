@@ -14,6 +14,7 @@ use std::sync::{Arc, Mutex};
 use crate::config::Config;
 use crate::file_manager;
 use crate::main_controller::DEFAULT_MAX_DEPTH;
+use crate::utils::format_error_chain;
 
 /// 生成配置的规则定义
 #[derive(Debug, Deserialize)]
@@ -246,6 +247,22 @@ fn create_group_config(
         }
     }
 
+    new_group.files.sort_by(|a, b| {
+        let key_a = a
+            .name
+            .as_deref()
+            .or(a.mod_id.as_deref())
+            .or(a.sha256.as_deref())
+            .unwrap_or("unknown");
+        let key_b = b
+            .name
+            .as_deref()
+            .or(b.mod_id.as_deref())
+            .or(b.sha256.as_deref())
+            .unwrap_or("unknown");
+        key_a.cmp(key_b)
+    });
+
     Ok(new_group)
 }
 
@@ -328,26 +345,28 @@ fn create_file_rule(rule: &GenerateRule, file_path: &Path) -> Result<crate::conf
     // 如果需要，提取 mod_id 和 mod_version
     if (rule.mod_id || rule.mod_version) && file_path.extension().is_some_and(|ext| ext == "jar") {
         log::debug!("尝试从 JAR 文件中提取 mod 信息: {}", file_path.display());
-        if let Ok((mod_id, mod_version)) =
-            file_manager::modinfo_cache::extract_mod_info_from_jar(file_path)
-        {
-            log::debug!(
-                "成功提取 mod 信息: mod_id={}, mod_version={}",
-                mod_id,
-                mod_version
-            );
 
-            if rule.mod_id {
-                file_rule.mod_id = Some(mod_id.clone());
+        match file_manager::modinfo_cache::extract_mod_info_from_jar(file_path) {
+            Ok((mod_id, mod_version)) => {
+                log::debug!(
+                    "成功提取 mod 信息: mod_id={}, mod_version={}",
+                    mod_id,
+                    mod_version
+                );
+
+                if rule.mod_id {
+                    file_rule.mod_id = Some(mod_id.clone());
+                }
+                if rule.mod_version {
+                    file_rule.mod_version = Some(mod_version.clone());
+                }
             }
-            if rule.mod_version {
-                file_rule.mod_version = Some(mod_version.clone());
+            Err(e) => {
+                log::warn!("无法从 JAR 文件中提取 mod 信息: {}", file_path.display());
+                log::debug!("{}", format_error_chain(&e));
             }
-        } else {
-            log::warn!("无法从 JAR 文件中提取 mod 信息: {}", file_path.display());
-        }
+        };
     }
-
     Ok(file_rule)
 }
 
