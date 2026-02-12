@@ -1,18 +1,22 @@
-# 更新文件地址，每次启动都会检查更新
+# <必须> 更新文件地址，每次启动都会检查更新
+# 但即使无法更新，也会执行之后的补丁流程
 metadata = "http://example.com/metadata.toml"
 
-# 自更新地址（可选），如果指定，程序启动时会检查并更新自身
+# [可选] 自更新地址，如果指定，程序启动时会检查 <URL>.sha256
+# 如果 sha256 和自身不同则更新自身
 self_update_url = "http://example.com/mc_simple_patcher.exe"
 
-# 版本号，目前仅作为标识作用
+# <必须> 版本号，目前仅作为标识作用
 version = 0
 
+# [可选] 整个network键都是可选的
 [network]
-# 是否强制切换到quic，只走UDP协议
+# 是否强制切换到 HTTP/3 quic，只走UDP协议，默认为false
 quic = false
-# 是否忽略证书错误
+# 是否忽略证书错误，默认为false
 ignore_invalid_cert = true
 
+# 以下都是必须项目。
 [[groups]]
 
 # 锚点文件/文件夹，用于定位工作目录
@@ -39,6 +43,7 @@ delete = false
 pattern = '^.+\.jar$'
 
 # 每一个文件规则如果有多个规则，关系为和（AND）
+# 对于每一个files项，url键是必须的
 [[groups.files]]
 # 如果有 name 字段，则优先使用文件名进行完全匹配
 name = "OreExcavation.jar"

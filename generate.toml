@@ -5,6 +5,12 @@ metadata = "http://example.com/metadata.toml"
 # 但请不要删除，这是必须的键
 version = 0
 
+# 这里使用强制 QUIC 协议作为示例
+# 实际使用若不需要 QUIC，请将这里设置成 false，或者删除整个 network 表
+[network]
+quic = true
+ignore_invalid_cert = false
+
 [[generate]]
 # 锚点文件/文件夹，用于定位工作目录
 # 一般可以设置为 Minecraft 主 jar 文件
@@ -25,6 +31,6 @@ url_base = "http://example.com/mods/"
 
 # 以下选项控制生成的配置中包含哪些字段
 name = true          # 是否包含文件名
-mod_id = true        # 是否包含 mod_id（对于 JAR 文件）
-mod_version = true   # 是否包含 mod_version（对于 JAR 文件）
+mod_id = false       # 是否包含 mod_id（对于 JAR 文件）
+mod_version = false  # 是否包含 mod_version（对于 JAR 文件）
 sha256 = true        # 是否计算并包含文件的 SHA256 哈希值
