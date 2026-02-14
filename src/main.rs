@@ -1,11 +1,12 @@
 use crate::{
+    config::Config,
     global_config::get_global_config,
     utils::{downloader, logger},
 };
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use hex::ToHex;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 pub mod config;
 pub mod file_manager;
@@ -43,7 +44,7 @@ struct Args {
 
     /// 配置文件路径
     #[arg(short, long, default_value = "mc_simple_patcher.toml")]
-    config: PathBuf,
+    config: String,
 
     /// 启用调试模式
     #[arg(short, long)]
@@ -73,8 +74,12 @@ async fn main() -> Result<()> {
             if let Some(sha256_path) = args.sha256 {
                 // 如果提供了 --sha256 参数，则计算文件的SHA256哈希值
                 calculate_and_print_file_sha256(&sha256_path)
+            } else if is_https_scheme(&args.config) {
+                log::info!("配置文件是网络路径，尝试下载到本地……");
+                execute_with_config_2update(args.config).await
             } else {
-                execute_with_config(&args.config).await
+                let config_path = PathBuf::from(&args.config);
+                execute_with_config(&config_path).await
             }
         }
     };
@@ -90,6 +95,25 @@ async fn main() -> Result<()> {
     pause_before_exit();
 
     result
+}
+
+fn is_https_scheme(url: &str) -> bool {
+    url.starts_with("http://") || url.starts_with("https://")
+}
+
+async fn execute_with_config_2update(url: String) -> Result<()> {
+    // 构建只有metadata-url的config来调起下载行为
+    let mut mock_config = Config::default();
+    mock_config.metadata_config.metadata = Some(url);
+    global_config::set_global_config(mock_config);
+
+    // 更新metadata到本地
+    let config =
+        parse_metadata_with_update(PathBuf::from("mc_simple_patcher.toml").as_path()).await?;
+    global_config::set_global_config(config);
+
+    // 根据新config继续执行之后的内容
+    main_controller::execute_patch(get_global_config()).await
 }
 
 /// 检查并执行自更新
@@ -127,7 +151,7 @@ fn pause_before_exit() {
 /// 解析配置文件并执行补丁
 async fn execute_with_config(config_path: &std::path::Path) -> Result<()> {
     log::info!("正在解析配置文件: {}", config_path.display());
-    let config = update_metadata(config_path).await?;
+    let config = parse_metadata_with_update(config_path).await?;
 
     // 初始化全局配置
     global_config::set_global_config(config);
@@ -139,7 +163,29 @@ async fn execute_with_config(config_path: &std::path::Path) -> Result<()> {
     main_controller::execute_patch(get_global_config()).await
 }
 
-async fn update_metadata(config_path: &std::path::Path) -> Result<config::Config> {
+async fn update_metadata(dst: &Path) -> Option<config::Config> {
+    match downloader::update_metadata(dst).await {
+        Err(e) => {
+            utils::print_error_chain(&e);
+            None
+        }
+        // 元数据文件已是最新无需下载和重新解析
+        Ok(false) => None,
+        Ok(true) => {
+            log::info!("元数据文件已更新: {}", dst.display());
+            // 重新解析配置文件
+            match config::parse_config(dst) {
+                Ok(c) => Some(c),
+                Err(e) => {
+                    utils::print_error_chain(&e);
+                    None
+                }
+            }
+        }
+    }
+}
+
+async fn parse_metadata_with_update(config_path: &std::path::Path) -> Result<config::Config> {
     let config = config::parse_config(config_path)
         .with_context(|| format!("解析配置文件失败: {}", config_path.display()))?;
 
@@ -147,17 +193,5 @@ async fn update_metadata(config_path: &std::path::Path) -> Result<config::Config
     let metadata_url = config.metadata_config.metadata.as_ref().unwrap();
     log::info!("尝试更新元数据: {}", metadata_url);
 
-    match downloader::update_metadata(config_path).await {
-        Err(e) => {
-            utils::print_error_chain(&e);
-            Ok(config)
-        }
-        // 元数据文件已是最新无需下载和重新解析
-        Ok(false) => Ok(config),
-        Ok(true) => {
-            log::info!("元数据文件已更新: {}", config_path.display());
-            // 重新解析配置文件
-            config::parse_config(config_path)
-        }
-    }
+    update_metadata(config_path).await.context("未更新元数据")
 }

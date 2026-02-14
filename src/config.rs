@@ -7,7 +7,7 @@ use std::fs;
 use std::path::Path;
 
 /// 元数据配置
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
 pub struct MetadataConfig {
     pub metadata: Option<String>,
     pub version: Option<u32>,
@@ -55,7 +55,7 @@ fn default_ignore_invalid_cert() -> bool {
 }
 
 /// 主配置结构
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
 pub struct Config {
     #[serde(flatten)]
     pub metadata_config: MetadataConfig,
