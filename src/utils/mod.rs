@@ -4,12 +4,13 @@
 pub mod downloader;
 pub mod logger;
 
-use anyhow::{Error, Result};
+use anyhow::{Context, Error, Result};
 use bytes::Bytes;
 use sha2::{Digest, Sha256};
 use std::fs::File;
 use std::io::Read;
 use std::path::Path;
+use std::sync::Arc;
 
 /// 计算文件的SHA256哈希值
 pub fn calculate_file_sha256(file_path: &Path) -> Result<Bytes> {
@@ -41,4 +42,13 @@ pub fn format_error_chain(err: &Error) -> String {
     });
     result.push_str(format!("\n{}\n", "-".repeat(50)).as_str());
     result
+}
+
+pub fn get_filename(file_path: &Path) -> Result<Arc<str>> {
+    Ok(Arc::from(
+        file_path
+            .file_name()
+            .context(format!("无法获取文件名: {:?}", file_path))?
+            .to_string_lossy(),
+    ))
 }

@@ -105,7 +105,7 @@ pub fn init_logger(debug: bool) -> Result<()> {
     let logger = DualLogger::new(debug)?;
 
     log::set_boxed_logger(Box::new(logger))
-        .map(|()| log::set_max_level(log::LevelFilter::Debug))
+        .map(|()| log::set_max_level(log::LevelFilter::Trace))
         .with_context(|| "Failed to initialize logger")?;
 
     log::info!("Logger initialized");

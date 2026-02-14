@@ -14,21 +14,15 @@ use std::path::{Path, PathBuf};
 
 /// 检查文件是否匹配规则
 pub fn matches_rule(file_path: &Path, rule: &FileRule, cache: &ModInfoCache) -> Result<bool> {
-    let file_name = file_path
-        .file_name()
-        .context(format!("无法获取文件名: {:?}", file_path))?
-        .to_string_lossy();
+    // log::trace!("matches_rule: {:?}", file_path);
+    let file_name = crate::utils::get_filename(file_path)?;
 
     // 检查名称是否匹配
     let name_matches = check_name_match(&file_name, rule);
     let pattern_matches = check_pattern_match(&file_name, rule);
 
     // 检查mod信息是否匹配
-    let mod_info_matches = if rule.mod_id.is_some() {
-        check_mod_info_match(rule, cache)
-    } else {
-        true // 如果没有指定 mod_id 或 mod_version，则认为匹配
-    };
+    let mod_info_matches = check_mod_info_match(&file_name, rule, cache);
 
     // 检查SHA256是否匹配
     let sha256_matches = match check_sha256_match(rule, cache) {
@@ -63,19 +57,31 @@ pub fn check_pattern_match(file_name: &str, rule: &FileRule) -> bool {
 }
 
 /// 检查mod信息是否匹配（使用缓存）
-fn check_mod_info_match(rule: &FileRule, cache: &ModInfoCache) -> bool {
-    // 检查缓存中是否已有该文件的mod信息
-    let has_mod_id = cache.mod_id.contains(rule.mod_id.as_deref().unwrap());
+fn check_mod_info_match(file_name: &str, rule: &FileRule, cache: &ModInfoCache) -> bool {
+    if rule.mod_id.is_none() {
+        return true; // 如果没有指定 mod_id 或 mod_version，则认为匹配
+    }
+    let mod_id_rule = rule.mod_id.as_deref().unwrap();
 
-    if !has_mod_id {
+    // 检查缓存中是否已有该文件的mod信息
+    let mod_id_actual = cache.mod_id.get(file_name);
+    if mod_id_actual.is_none() {
+        // 不在缓存中说明没有这个mod，直接返回不匹配
+        return false;
+    }
+
+    let mod_id_cached = mod_id_actual.unwrap().as_ref();
+    if mod_id_rule != mod_id_cached {
+        // 如果同一个文件的mod id都不同，返回不匹配
         return false;
     } else if rule.mod_version.is_none() {
         return true; // 如果没有指定 mod_version，则认为匹配
     }
 
     // 检查mod_version是否匹配
-    if let Some(actual_version) = cache.mod_version.get(rule.mod_id.as_deref().unwrap()) {
-        actual_version == rule.mod_version.as_deref().unwrap()
+    let mod_version_rule = rule.mod_version.as_deref().unwrap();
+    if let Some(actual_version) = cache.mod_version.get(mod_id_rule) {
+        actual_version.as_ref() == mod_version_rule
     } else {
         false // 如果缓存中没有找到对应的版本信息，则认为不匹配
     }
@@ -88,8 +94,8 @@ fn check_sha256_match(rule: &FileRule, cache: &ModInfoCache) -> Result<bool> {
     }
 
     let sha256_hex = rule.sha256.as_ref().unwrap();
-    let sha256_vec_u8 = hex::decode(sha256_hex).context("SHA256 Hex 文本解析失败")?;
-    Ok(cache.sha256.contains(Bytes::from(sha256_vec_u8).as_ref()))
+    let sha256_bytes = Bytes::from(hex::decode(sha256_hex).context("SHA256 Hex 文本解析失败")?);
+    Ok(cache.sha256.contains(&sha256_bytes))
 }
 
 /// 检查是否存在对应的 .jar.disabled 文件

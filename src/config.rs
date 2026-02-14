@@ -67,6 +67,7 @@ pub struct Config {
 
 /// 解析配置文件
 pub fn parse_config<P: AsRef<Path>>(path: P) -> Result<Config> {
+    // log::trace!("{:?}", path.as_ref());
     let contents = fs::read_to_string(path)?;
     let config: Config = toml::from_str(&contents)?;
     validate_config(&config)?;

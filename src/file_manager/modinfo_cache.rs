@@ -1,4 +1,4 @@
-use crate::utils::calculate_file_sha256;
+use crate::utils::{calculate_file_sha256, get_filename};
 
 use anyhow::{Context, Result};
 use bytes::Bytes;
@@ -13,14 +13,14 @@ use std::{
 
 pub struct ModInfoCache {
     pub sha256: HashSet<Bytes>,
-    pub mod_id: HashSet<Arc<str>>,
-    pub mod_version: HashMap<Arc<str>, String>,
+    pub mod_id: HashMap<Arc<str>, Arc<str>>,
+    pub mod_version: HashMap<Arc<str>, Arc<str>>,
 }
 
 struct ModInfo {
     pub sha256: Option<Bytes>,
     pub mod_id: Option<Arc<str>>,
-    pub mod_version: Option<(Arc<str>, String)>,
+    pub mod_version: Option<(Arc<str>, Arc<str>)>,
 }
 
 pub fn extract_modinfo<I>(files: I, capacity: Option<usize>) -> Result<ModInfoCache>
@@ -33,26 +33,31 @@ where
     // 进度跟踪器
     let progress = ExtractProgressTracker::new(capacity);
 
-    let mod_infos: Vec<ModInfo> = files
-        .map(|file| extract_file_info(&progress, file.as_ref()))
+    let mod_infos: Vec<_> = files
+        .map(|file| {
+            let path = file.as_ref().to_owned();
+            let mod_info = extract_file_info(&progress, &path);
+            (path, mod_info)
+        })
         .collect();
     progress.pb.lock().unwrap().finish();
 
     let mut mod_cache = ModInfoCache {
         sha256: HashSet::with_capacity(capacity),
-        mod_id: HashSet::with_capacity(capacity),
+        mod_id: HashMap::with_capacity(capacity),
         mod_version: HashMap::with_capacity(capacity),
     };
 
     println!();
     log::info!("文件检索完成，开始构建缓存……");
 
-    for mod_info in mod_infos {
+    for (file, mod_info) in mod_infos {
         if let Some(sha256) = mod_info.sha256 {
             mod_cache.sha256.insert(sha256);
         }
         if let Some(mod_id) = mod_info.mod_id {
-            mod_cache.mod_id.insert(mod_id.clone());
+            let file_name = get_filename(&file)?;
+            mod_cache.mod_id.insert(file_name, mod_id.clone());
 
             if let Some((_, mod_version)) = mod_info.mod_version {
                 mod_cache.mod_version.insert(mod_id, mod_version);
@@ -76,7 +81,7 @@ fn extract_file_info(progress: &ExtractProgressTracker, file: &Path) -> ModInfo 
         Ok((mod_id_str, mod_version_str)) => {
             let mod_id_arc: Arc<str> = Arc::from(mod_id_str);
             mod_info.mod_id = Some(mod_id_arc.clone());
-            mod_info.mod_version = Some((mod_id_arc, mod_version_str));
+            mod_info.mod_version = Some((mod_id_arc, Arc::from(mod_version_str)));
         }
         Err(e) => {
             log::debug!("未能从文件 {} 提取mod信息: {}", file.display(), e);
@@ -193,5 +198,4 @@ pub fn extract_mod_info_from_jar(jar_path: &Path) -> Result<(String, String)> {
         .context("Forge模式MOD信息提取失败！")
         .or_else(|e| extract_fabric_mod(&mut archive).context(e))
         .context("Fabric模式MOD信息提取失败！")
-        .or_else(|e| return Err(e))
 }

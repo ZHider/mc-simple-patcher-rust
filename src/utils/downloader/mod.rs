@@ -29,6 +29,9 @@ pub fn create_http_client() -> Result<reqwest::Client> {
         // 是否验证TLS证书
         builder = builder.tls_danger_accept_invalid_certs(config.ignore_invalid_cert);
     }
+    
+    // 开启ZSTD和GZIP支持
+    builder = builder.gzip(true).zstd(true);
 
     Ok(builder.build()?)
 }
@@ -161,7 +164,7 @@ where
                 &task.dest_path,
                 task.check_sha256,
                 Some(&progress_bar),
-                false
+                false,
             )
             .await?;
             Ok(())

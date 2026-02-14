@@ -152,6 +152,7 @@ async fn sync_files(
 
     for (index, file_rule) in group.files.iter().enumerate() {
         log::debug!("处理第 {} 个文件规则", index + 1);
+        // log::trace!("{:?}", file_rule);
 
         // 检查是否有匹配的活动文件
         let matched_file = existing_files.iter().find(|file_path| {
