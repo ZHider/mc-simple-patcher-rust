@@ -10,8 +10,9 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
+use toml::Value;
 
-use crate::config::Config;
+use crate::config::GroupConfig;
 use crate::file_manager;
 use crate::main_controller::DEFAULT_MAX_DEPTH;
 use crate::utils::format_error_chain;
@@ -35,50 +36,75 @@ pub async fn generate_config_from_toml(toml_file: PathBuf) -> Result<()> {
     log::info!("开始从 {} 生成配置文件", toml_file.display());
 
     // 读取并解析生成规则
-    let generate_config = load_generate_config(&toml_file)?;
+    let mut generator_config = load_generate_config(&toml_file)?;
     log::info!("成功解析生成规则文件");
 
     // 提取生成规则列表
-    let generate_rules = extract_generate_rules(&generate_config)?;
-    log::info!("共找到 {} 个生成规则", generate_rules.len());
-
-    // 读取原始配置文件（如果存在）以保留元数据
-    let mut base_config = load_base_config(&generate_config, &toml_file)?;
-    log::info!("已加载基础配置");
+    let generator_rules = extract_generator_rules(&generator_config)?;
+    let generator_rules_len = generator_rules.len();
+    log::info!("共找到 {} 个生成规则", generator_rules_len);
 
     // 为每个生成规则扫描目录并添加到配置中
-    for (idx, rule) in generate_rules.iter().enumerate() {
-        log::info!(
-            "处理第 {} 个生成规则: 锚点={}, 根目录={}",
-            idx + 1,
-            rule.anchor,
-            rule.root
-        );
+    let generated_file_groups: Vec<_> = generator_rules
+        .into_par_iter()
+        .zip(1..generator_rules_len + 1)
+        .map(|rule_idx| {
+            let (rule, idx) = rule_idx;
+            log::info!(
+                "处理第 {} 个生成规则: 锚点={}, 根目录={}",
+                idx,
+                rule.anchor,
+                rule.root
+            );
+            let new_group = process_generate_rule(&rule);
+            if let Err(e) = new_group {
+                crate::utils::print_error_chain(&e);
+                return None;
+            }
+            new_group.unwrap()
+        })
+        .filter(|c| c.is_some())
+        .map(|o| o.unwrap())
+        .collect();
 
-        if let Some(new_group) = process_generate_rule(rule).await? {
-            base_config.groups.push(new_group);
-        }
+    if generated_file_groups.len() <= 0 {
+        log::error!("没有处理任何文件组！");
+        return Ok(());
     }
 
-    // 生成输出文件
-    write_generated_config(&base_config, &toml_file)?;
+    let generated_file_groups_files_len: usize =
+        generated_file_groups.iter().map(|g| g.files.len()).sum();
 
     log::info!("配置文件已成功生成");
     log::info!(
         "总共处理了 {} 个组和 {} 个文件规则",
-        base_config.groups.len(),
-        base_config
-            .groups
-            .iter()
-            .map(|g| g.files.len())
-            .sum::<usize>()
+        generated_file_groups.len(),
+        generated_file_groups_files_len
     );
+
+    inject_generator_config(&mut generator_config, generated_file_groups);
+
+    // 生成输出文件
+    log::info!("正在写入文件到 {}", toml_file.display());
+    write_generated_config(generator_config, &toml_file)?;
 
     Ok(())
 }
 
+// 将 generated_groups 转换为 toml groups table array，更新到generator_config中
+fn inject_generator_config(
+    generator_config: &mut HashMap<String, Value>,
+    generated_file_groups: Vec<GroupConfig>,
+) {
+    generator_config.remove("generate");
+    generator_config.insert(
+        "groups".to_string(),
+        Value::try_from(generated_file_groups).unwrap(),
+    );
+}
+
 /// 加载生成配置
-fn load_generate_config(toml_file: &Path) -> Result<HashMap<String, serde_json::Value>> {
+fn load_generate_config(toml_file: &Path) -> Result<HashMap<String, Value>> {
     let generate_rules_str = fs::read_to_string(toml_file)
         .context(format!("读取生成规则文件失败: {}", toml_file.display()))?;
 
@@ -87,16 +113,14 @@ fn load_generate_config(toml_file: &Path) -> Result<HashMap<String, serde_json::
 }
 
 /// 提取生成规则列表
-fn extract_generate_rules(
-    generate_config: &HashMap<String, serde_json::Value>,
-) -> Result<Vec<GenerateRule>> {
+fn extract_generator_rules(generate_config: &HashMap<String, Value>) -> Result<Vec<GenerateRule>> {
     generate_config
         .get("generate")
         .and_then(|v| v.as_array())
         .context("生成规则文件中缺少 generate 数组")?
         .iter()
         .map(|v| {
-            let rule_map = v.as_object().context("生成规则必须是 Table")?;
+            let rule_map = v.as_table().context("生成规则必须是 Table")?;
 
             let rule_toml = toml::to_string(rule_map).context("转换生成规则失败")?;
             toml::from_str(&rule_toml).context("解析生成规则失败")
@@ -104,70 +128,8 @@ fn extract_generate_rules(
         .collect()
 }
 
-/// 加载基础配置
-fn load_base_config(
-    generate_config: &HashMap<String, serde_json::Value>,
-    toml_file: &Path,
-) -> Result<Config> {
-    if generate_config.contains_key("metadata") || generate_config.contains_key("version") {
-        log::info!("从生成规则文件中读取到元数据信息");
-        Ok(Config {
-            metadata_config: crate::config::MetadataConfig {
-                metadata: generate_config
-                    .get("metadata")
-                    .and_then(|v| v.as_str())
-                    .map(|s| s.to_string()),
-                version: generate_config
-                    .get("version")
-                    .and_then(|v| v.as_u64())
-                    .map(|v| v as u32),
-            },
-            network: Some(crate::config::NetworkConfig::default()),
-            self_update_url: None,
-            groups: vec![],
-        })
-    } else {
-        log::info!("未在生成规则文件中找到元数据信息，尝试从默认配置文件加载");
-        let default_config_path = toml_file
-            .parent()
-            .unwrap_or(Path::new("."))
-            .join("mc_simple_patcher.toml");
-        if default_config_path.exists() {
-            match crate::config::parse_config(&default_config_path) {
-                Ok(config) => {
-                    log::info!("成功从默认配置文件加载元数据");
-                    Ok(config)
-                }
-                Err(_) => {
-                    log::warn!("无法解析默认配置文件，使用默认元数据");
-                    Ok(Config {
-                        metadata_config: crate::config::MetadataConfig {
-                            metadata: None,
-                            version: Some(0),
-                        },
-                        network: Some(crate::config::NetworkConfig::default()),
-                        self_update_url: None,
-                        groups: vec![],
-                    })
-                }
-            }
-        } else {
-            log::warn!("未找到默认配置文件，使用默认元数据");
-            Ok(Config {
-                metadata_config: crate::config::MetadataConfig {
-                    metadata: None,
-                    version: Some(0),
-                },
-                network: Some(crate::config::NetworkConfig::default()),
-                self_update_url: None,
-                groups: vec![],
-            })
-        }
-    }
-}
-
 /// 处理单个生成规则
-async fn process_generate_rule(rule: &GenerateRule) -> Result<Option<crate::config::GroupConfig>> {
+fn process_generate_rule(rule: &GenerateRule) -> Result<Option<crate::config::GroupConfig>> {
     // 查找锚点目录
     let Some(anchor_dir) = crate::file_manager::anchor_finder::find_anchor_optimized(
         &rule.anchor,
@@ -371,19 +333,19 @@ fn create_file_rule(rule: &GenerateRule, file_path: &Path) -> Result<crate::conf
 }
 
 /// 写入生成的配置文件
-fn write_generated_config(base_config: &Config, toml_file: &Path) -> Result<()> {
+fn write_generated_config(generated_config: HashMap<String, Value>, dst_path: &Path) -> Result<()> {
     // 生成输出文件名
-    let output_path = toml_file.with_file_name(format!(
+    let output_path = dst_path.with_file_name(format!(
         "{}-generated.toml",
-        toml_file
+        dst_path
             .file_stem()
-            .ok_or_else(|| anyhow::anyhow!("无效的文件名: {}", toml_file.display()))?
+            .ok_or_else(|| anyhow::anyhow!("无效的文件名: {}", dst_path.display()))?
             .to_string_lossy()
     ));
 
     // 将配置写入文件
     log::info!("正在序列化配置并写入文件: {}", output_path.display());
-    let config_content = toml::to_string_pretty(base_config)?;
+    let config_content = toml::to_string_pretty(&generated_config)?;
 
     fs::write(&output_path, config_content)
         .context(format!("写入配置文件失败: {}", output_path.display()))?;
