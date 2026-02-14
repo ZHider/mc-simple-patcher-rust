@@ -108,8 +108,9 @@ async fn execute_with_config_2update(url: String) -> Result<()> {
     global_config::set_global_config(mock_config);
 
     // 更新metadata到本地
-    let config =
-        parse_metadata_with_update(PathBuf::from("mc_simple_patcher.toml").as_path()).await?;
+    let config = update_metadata(PathBuf::from("mc_simple_patcher.toml").as_path())
+        .await
+        .context("更新metadata失败！")?;
     global_config::set_global_config(config);
 
     // 根据新config继续执行之后的内容
