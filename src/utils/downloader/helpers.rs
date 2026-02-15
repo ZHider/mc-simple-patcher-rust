@@ -17,7 +17,7 @@ pub fn get_file_length(resp: &Response) -> Result<u64> {
             .to_str()
             .context(format!("HTTP头读取时解码失败: {:?}", file_range))?
             .split('/')
-            .last()
+            .next_back()
             .with_context(|| {
                 format!(
                     "尝试以/分割content-range时错误：{}",

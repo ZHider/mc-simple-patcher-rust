@@ -7,6 +7,8 @@ use std::fs::OpenOptions;
 use std::io::Write;
 use std::sync::Mutex;
 
+use crate::global_config;
+
 /// 双重日志记录器，同时输出到控制台和文件
 pub struct DualLogger {
     file: Mutex<std::fs::File>,
@@ -76,7 +78,16 @@ impl log::Log for DualLogger {
             if record.level() == log::Level::Error {
                 eprintln!("{} {}", level_tag, record.args());
             } else {
-                println!("{} {}", level_tag, record.args());
+                let msg = format!("{} {}", level_tag, record.args());
+                if let Some(pb) = global_config::get_global_progress() {
+                    pb.println(msg);
+                } else {
+                    let mut stdout = std::io::stdout();
+                    let _ = stdout
+                        .write_all(msg.as_bytes())
+                        .and(stdout.write(&[10]))
+                        .and(stdout.flush());
+                }
             }
 
             // 同时写入日志文件

@@ -1,5 +1,7 @@
+use indicatif::ProgressBar;
+
 use crate::config::Config;
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, LazyLock, Mutex, RwLock};
 
 // 全局配置存储
 static GLOBAL_CONFIG: RwLock<Option<Arc<Config>>> = RwLock::new(None);
@@ -16,4 +18,22 @@ pub fn get_global_config() -> Arc<Config> {
         .unwrap()
         .clone()
         .expect("在全局Config还没有进行初始化的时候就被访问了")
+}
+
+// 全局进度条句柄
+static GLOBAL_PROGRESS: LazyLock<Mutex<Option<ProgressBar>>> = LazyLock::new(|| Mutex::new(None));
+
+/// 设置全局进度条（在创建进度条时调用）
+pub fn set_global_progress(pb: ProgressBar) {
+    *GLOBAL_PROGRESS.lock().unwrap() = Some(pb);
+}
+
+/// 清除全局进度条（结束后调用）
+pub fn clear_global_progress() {
+    *GLOBAL_PROGRESS.lock().unwrap() = None;
+}
+
+/// 获取全局进度条的引用（如果存在）
+pub fn get_global_progress() -> Option<ProgressBar> {
+    GLOBAL_PROGRESS.lock().unwrap().clone()
 }

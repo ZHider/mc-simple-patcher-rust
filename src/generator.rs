@@ -67,7 +67,7 @@ pub async fn generate_config_from_toml(toml_file: PathBuf) -> Result<()> {
         .map(|o| o.unwrap())
         .collect();
 
-    if generated_file_groups.len() <= 0 {
+    if generated_file_groups.is_empty() {
         log::error!("没有处理任何文件组！");
         return Ok(());
     }

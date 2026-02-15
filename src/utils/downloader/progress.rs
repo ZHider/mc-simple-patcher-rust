@@ -166,7 +166,10 @@ pub fn create_progress_bar_single() -> ProgressBar {
     pb.set_position(0); // 初始位置
 
     // 启用稳定刷新（间隔由 refresh_rate_hz 计算得出）
-    // pb.enable_steady_tick(Duration::from_millis(TICK_INTERVAL_MS));
+    pb.enable_steady_tick(Duration::from_millis(TICK_INTERVAL_MS));
+
+    // 设置全局进度条引用
+    crate::global_config::set_global_progress(pb.clone());
 
     pb
 }
@@ -209,5 +212,8 @@ pub fn spawn_progress_updater(
 
         pb.set_style(PB_FINISHED_STYLE.clone());
         pb.finish_with_message(format!("{}✓完成 {}", prefix, filename));
+
+        // 清除全局进度条引用
+        crate::global_config::clear_global_progress();
     })
 }
