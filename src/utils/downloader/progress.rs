@@ -152,6 +152,25 @@ pub fn create_progress_bar(
     pb
 }
 
+pub fn create_progress_bar_single() -> ProgressBar {
+    let pb = ProgressBar::new(0);
+
+    // 设置样式
+    pb.set_style(PB_WAITING_STYLE.clone());
+
+    // 设置消息（带序号和格式化后的文件名），当 total 未知时显示 `?`
+    let file_info = "开始下载\t".to_string();
+    pb.set_message(file_info);
+
+    // 保存原始文件名作为状态（我们需要在下载时更新它）
+    pb.set_position(0); // 初始位置
+
+    // 启用稳定刷新（间隔由 refresh_rate_hz 计算得出）
+    pb.enable_steady_tick(Duration::from_millis(TICK_INTERVAL_MS));
+
+    pb
+}
+
 /// 启动一个独立的进度更新器任务
 ///
 /// `rx` 用于接收下载任务发送的已下载字节数；任务以固定频率刷新滚动文本并在下载完成后调用 finish

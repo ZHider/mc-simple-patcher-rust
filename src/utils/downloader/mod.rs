@@ -64,7 +64,7 @@ async fn download_file_internal(
     url: &str,
     dest_path: &Path,
     check_sha256: bool,
-    progress_bar: Option<&ProgressBar>,
+    progress_bar: Option<ProgressBar>,
     stop_if_cannot_check_integrity: bool,
 ) -> Result<bool> {
     // 检查文件是否已存在且完整
@@ -73,7 +73,7 @@ async fn download_file_internal(
             // 检查成功且文件完整
             Some(true) => {
                 if let Some(pb) = progress_bar {
-                    let prefix = extract_prefix_from_pb(pb);
+                    let prefix = extract_prefix_from_pb(&pb);
                     log::debug!("跳过: 文件已是最新版本");
                     pb.finish_with_message(format!("{}✓ 已跳过", prefix));
                 } else {
@@ -111,12 +111,13 @@ async fn download_file_internal(
 pub async fn update_metadata(dest_path: &Path) -> Result<bool> {
     let config = get_global_config();
     let metadata = config.metadata_config.metadata.as_deref().unwrap();
-    download_file_internal(metadata, dest_path, true, None, false).await
+    download_file(metadata, dest_path, true).await
 }
 
 /// 单文件下载
 pub async fn download_file(url: &str, dest_path: &Path, check_sha256: bool) -> Result<bool> {
-    download_file_internal(url, dest_path, check_sha256, None, false).await
+    let pb = progress::create_progress_bar_single();
+    download_file_internal(url, dest_path, check_sha256, Some(pb), false).await
 }
 
 /// 使用 indicatif 多进度条批量下载文件，接受迭代器
@@ -166,7 +167,7 @@ where
                 &task.url,
                 &task.dest_path,
                 task.check_sha256,
-                Some(&progress_bar),
+                Some(progress_bar),
                 false,
             )
             .await?;
@@ -192,10 +193,10 @@ where
 async fn download_with_progress_logic(
     response: reqwest::Response,
     dest_path: &Path,
-    pb: &ProgressBar,
+    pb: ProgressBar,
 ) -> Result<bool> {
     let full_filename = extract_full_filename(dest_path);
-    let prefix = extract_prefix_from_pb(pb);
+    let prefix = extract_prefix_from_pb(&pb);
 
     let total_size = get_file_length(&response)?;
     pb.set_length(total_size);
