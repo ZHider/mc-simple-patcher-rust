@@ -28,9 +28,6 @@ pub fn create_http_client() -> Result<reqwest::Client> {
     // 是否验证TLS证书
     builder = builder.tls_danger_accept_invalid_certs(network_config.ignore_invalid_cert);
 
-    // 开启ZSTD和GZIP支持
-    builder = builder.gzip(true).zstd(true);
-
     // 默认超时时间
     builder = builder.timeout(Duration::from_secs(get_global_config().network.timeout));
 
@@ -230,7 +227,7 @@ async fn download_with_progress_logic(
     );
 
     // 下载任务：读取网络数据并写入文件，同时把已读字节数发送给更新任务
-    let mut buffer = vec![0u8; 4096];
+    let mut buffer = vec![0u8; 1024];
     loop {
         match response_body.read(&mut buffer).await {
             Ok(n) if n > 0 => {
@@ -249,7 +246,8 @@ async fn download_with_progress_logic(
             _ => continue,
         }
     }
-
+    
+    let _ = tx.send(0).await;
     dest_file.flush().await.context("刷新文件缓冲区失败")?;
     // 关闭发送端，通知 updater 完成
     drop(tx);
