@@ -20,21 +20,19 @@ pub fn create_http_client() -> Result<reqwest::Client> {
 
     let mut builder = reqwest::ClientBuilder::new();
 
-    if let Some(config) = network_config {
-        if config.quic {
-            // 使用HTTP/3协议
-            builder = builder.http3_prior_knowledge();
-        }
-
-        // 是否验证TLS证书
-        builder = builder.tls_danger_accept_invalid_certs(config.ignore_invalid_cert);
+    if network_config.quic {
+        // 使用HTTP/3协议
+        builder = builder.http3_prior_knowledge();
     }
+
+    // 是否验证TLS证书
+    builder = builder.tls_danger_accept_invalid_certs(network_config.ignore_invalid_cert);
 
     // 开启ZSTD和GZIP支持
     builder = builder.gzip(true).zstd(true);
 
     // 默认超时时间
-    builder = builder.timeout(Duration::from_secs(10));
+    builder = builder.timeout(Duration::from_secs(get_global_config().network.timeout));
 
     Ok(builder.build()?)
 }
@@ -43,9 +41,7 @@ pub fn create_http_client() -> Result<reqwest::Client> {
 fn build_request(request: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
     let config = get_global_config();
 
-    if let Some(config) = config.network
-        && config.quic
-    {
+    if config.network.quic {
         // 显式指定使用HTTP/3版本
         return request.version(reqwest::Version::HTTP_3);
     }

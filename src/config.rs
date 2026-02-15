@@ -48,10 +48,16 @@ pub struct NetworkConfig {
     pub quic: bool,
     #[serde(default = "default_ignore_invalid_cert")]
     pub ignore_invalid_cert: bool,
+    #[serde(default = "metadata_config_timeout_default")]
+    pub timeout: u64,
 }
 
 fn default_ignore_invalid_cert() -> bool {
     true
+}
+
+pub fn metadata_config_timeout_default() -> u64 {
+    15
 }
 
 /// 主配置结构
@@ -60,7 +66,7 @@ pub struct Config {
     #[serde(flatten)]
     pub metadata_config: MetadataConfig,
     #[serde(default)]
-    pub network: Option<NetworkConfig>,
+    pub network: NetworkConfig,
     pub self_update_url: Option<String>,
     pub groups: Vec<GroupConfig>,
 }
@@ -76,13 +82,11 @@ pub fn parse_config<P: AsRef<Path>>(path: P) -> Result<Config> {
 
 /// 验证配置的有效性
 fn validate_config(config: &Config) -> Result<()> {
-    if let Some(network_config) = config.network {
-        if network_config.quic {
-            log::warn!("已开启 HTTP3/QUIC/UDP 协议！");
-        }
-        if network_config.ignore_invalid_cert {
-            log::warn!("已经关闭证书验证，您的通讯可能更容易遭受 MITM 攻击！");
-        }
+    if config.network.quic {
+        log::warn!("已开启 HTTP3/QUIC/UDP 协议！");
+    }
+    if config.network.ignore_invalid_cert {
+        log::warn!("已经关闭证书验证，您的通讯可能更容易遭受 MITM 攻击！");
     }
 
     // 验证 self_update_url（如果存在）
@@ -161,7 +165,7 @@ mod tests {
                 metadata: Some("Test Modpack".to_string()),
                 version: Some(1),
             },
-            network: Some(NetworkConfig::default()),
+            network: NetworkConfig::default(),
             self_update_url: None,
             groups: vec![GroupConfig {
                 anchor: "mods".to_string(),

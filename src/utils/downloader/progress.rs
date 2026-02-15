@@ -166,7 +166,7 @@ pub fn create_progress_bar_single() -> ProgressBar {
     pb.set_position(0); // 初始位置
 
     // 启用稳定刷新（间隔由 refresh_rate_hz 计算得出）
-    pb.enable_steady_tick(Duration::from_millis(TICK_INTERVAL_MS));
+    // pb.enable_steady_tick(Duration::from_millis(TICK_INTERVAL_MS));
 
     pb
 }
