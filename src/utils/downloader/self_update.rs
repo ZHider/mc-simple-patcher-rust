@@ -88,6 +88,7 @@ fn replace_executable(current_exe: &Path, new_exe: &Path) -> Result<()> {
         // 创建一个批处理脚本，等待当前进程退出后替换文件
         let script_content = format!(
             "@echo off\r\n
+            chcp 65001>nul\r\n
             :loop\r\n
             timeout /t 1 /nobreak >nul\r\n
             del \"{}\" 2>nul\r\n

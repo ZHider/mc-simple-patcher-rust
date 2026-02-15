@@ -1,12 +1,16 @@
 use crate::{
     config::Config,
+    generator::write_sha256,
     global_config::get_global_config,
     utils::{downloader, logger},
 };
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
-use hex::ToHex;
-use std::path::{Path, PathBuf};
+use std::{
+    fs::File,
+    io::Read,
+    path::{Path, PathBuf},
+};
 
 pub mod config;
 pub mod file_manager;
@@ -21,9 +25,16 @@ fn calculate_and_print_file_sha256(file_path: &std::path::Path) -> Result<()> {
         anyhow::bail!("指定的文件不存在: {:?}", file_path);
     }
 
-    let hash_bytes = utils::calculate_file_sha256(file_path)?;
-    println!("{}", &hash_bytes.encode_hex::<String>());
-    Ok(())
+    let result = write_sha256(file_path);
+
+    if result.is_ok() {
+        let mut hex_str_file = File::open(file_path.with_added_extension("sha256"))?;
+        let mut hex_str = String::with_capacity(256);
+        hex_str_file.read_to_string(&mut hex_str)?;
+        println!("{}", &hex_str);
+    }
+
+    result
 }
 
 #[derive(Subcommand, Debug)]
@@ -194,5 +205,8 @@ async fn parse_metadata_with_update(config_path: &std::path::Path) -> Result<con
     let metadata_url = config.metadata_config.metadata.as_ref().unwrap();
     log::info!("尝试更新元数据: {}", metadata_url);
 
-    update_metadata(config_path).await.context("未更新元数据")
+    Ok(update_metadata(config_path).await.unwrap_or_else(|| {
+        log::warn!("元数据未更新！");
+        config
+    }))
 }

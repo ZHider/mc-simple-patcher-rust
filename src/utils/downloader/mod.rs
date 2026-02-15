@@ -9,7 +9,7 @@ use helpers::{ensure_success_response, get_file_length};
 use indicatif::ProgressBar;
 use progress::{create_progress_bar, setup_multi_progress, spawn_progress_updater};
 use reqwest::{self};
-use std::path::Path;
+use std::{path::Path, time::Duration};
 // Duration not needed here; kept in progress.rs
 use crate::global_config::get_global_config;
 use tokio::io::AsyncWriteExt;
@@ -29,9 +29,12 @@ pub fn create_http_client() -> Result<reqwest::Client> {
         // 是否验证TLS证书
         builder = builder.tls_danger_accept_invalid_certs(config.ignore_invalid_cert);
     }
-    
+
     // 开启ZSTD和GZIP支持
     builder = builder.gzip(true).zstd(true);
+
+    // 默认超时时间
+    builder = builder.timeout(Duration::from_secs(10));
 
     Ok(builder.build()?)
 }

@@ -360,7 +360,7 @@ fn write_generated_config(generated_config: HashMap<String, Value>, dst_path: &P
 }
 
 /// 生成sha256文件
-fn write_sha256(file_path: &Path) -> Result<()> {
+pub fn write_sha256(file_path: &Path) -> Result<()> {
     let sha256 =
         crate::utils::calculate_file_sha256(file_path).context("计算配置文件SHA256失败")?;
     let sha256_str = hex::encode(sha256);
