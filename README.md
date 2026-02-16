@@ -82,6 +82,12 @@ Options:
   -V, --version          Print version
 ```
 
+其中，`-c, --config <CONFIG>` 参数可以接受 HTTP(S) 网络地址。若以 `http(s)://` 开头，程序将优先进行 toml 下载。
+
+### 典型使用流程
+
+TODO
+
 ## 配置
 
 ### 程序基本逻辑
@@ -99,6 +105,23 @@ Options:
 6. 检查完成后，对于记录中未能匹配到的文件，如果 `mirror = true`，则需要对该文件进行处理：
     1. 如果 `delete = false`，则在该文件名后增加 `.disabled`。
     2. 否则，删除该文件。
+
+#### 下载逻辑
+
+对于 `metadata`、`self_update_url` 下载操作，将检查服务端的 `<filename>.sha256`：
+
+- 对于 `metadata`（也就是 toml 文件的 url 下载地址）
+  - 如果服务端没有 `<filename>.sha256`，则始终下载。
+  - 如果服务端有，则首先计算本地 sha256。如果和服务端比对一致，则跳过下载。
+- 对于 `self_update_url`（也就是程序自身的 exe 文件的 url 下载地址）
+  - 如果服务端没有 `<filename>.sha256`，则始终跳过下载。
+  - 如果服务端有，则首先计算本地 sha256。
+    - 如果和服务端比对一致，则跳过下载。
+    - 如果和服务端不一致，则下载到临时文件夹，然后结束程序、替换本体。
+
+对于所有下载操作：
+- 如果服务端有 `<filename>.gz`，则下载该文件，之后解压覆盖本地的 `<filename>`
+- 如果服务端没有 gz 文件，则正常下载。
 
 ### 配置文件生成 - 子命令 generate
 
@@ -125,11 +148,14 @@ mc_simple_patcher.exe generate <input.toml>
 使用 `[network]` 部分来配置网络相关选项：
 
 ```toml
+# 整个 network表 都是可选的
 [network]
 # 是否强制切换到quic，只走UDP协议
 quic = false
 # 是否忽略证书错误（对于自签名证书等情况）
 ignore_invalid_cert = true
+# 下载超时时间，默认15秒
+timeout = 15
 ```
 
 - `quic`: 启用 HTTP/3 协议进行下载（默认为 false）
@@ -151,11 +177,11 @@ self_update_url = "http://example.com/mc_simple_patcher.exe"
 ### 文件结构设计
 
 - `config.rs`：配置文件解析
-- `anchor_finder.rs`：锚点搜索功能
-- `file_manager.rs`：文件管理和匹配
-- `downloader.rs`：网络下载功能
+- `file_manager`：文件管理和匹配
+- `file_manager/anchor_finder.rs`：锚点搜索功能
+- `utils/downloader`：网络下载功能
 - `main_controller.rs`：主控制器协调各模块
-- `main.rs`：程序入口点和日志系统
+- `main.rs`：程序入口点
 
 ### 技术栈
 
