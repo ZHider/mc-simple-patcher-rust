@@ -89,3 +89,32 @@ pub async fn url_get(url: &str) -> Result<Response> {
         .await
         .context("reqwest error in url get")
 }
+
+pub async fn url_get_range(
+    url: &str,
+    range_type: &str,
+    start: usize,
+    end: usize,
+) -> Result<Response> {
+    use super::build_request;
+    use super::create_http_client;
+
+    let client = create_http_client()?;
+    build_request(client.get(url))
+        .header("Range", format!("{range_type}={start}-{end}"))
+        .send()
+        .await
+        .context("reqwest error in url get")
+}
+
+pub fn support_download_range(resp: &Response) -> Result<Option<String>> {
+    if let Some(t) = resp.headers().get("accept-ranges") {
+        let t = t.to_str().context("解码头部失败")?.trim().to_lowercase();
+        if t == "none" {
+            return Ok(None);
+        }
+        Ok(Some(t))
+    } else {
+        Ok(None)
+    }
+}
