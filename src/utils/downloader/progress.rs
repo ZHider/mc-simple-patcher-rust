@@ -23,6 +23,7 @@ pub struct StringScroller {
     display_type: DisplayType,
     char_boundaries: Vec<usize>,
     offset_max: usize,
+    original_content_length: usize,
 }
 
 #[derive(Clone, Copy)]
@@ -45,6 +46,7 @@ impl StringScroller {
                 display_type: DisplayType::NoLoop,
                 char_boundaries: Vec::new(),
                 offset_max: 0,
+                original_content_length: content.len(),
             }
         } else {
             // Loop
@@ -68,6 +70,7 @@ impl StringScroller {
                 display_type: DisplayType::Loop,
                 char_boundaries,
                 offset_max,
+                original_content_length: content.len(),
             }
         }
     }
@@ -93,6 +96,10 @@ impl StringScroller {
         )];
 
         &self.loop_content[byte_start..byte_end]
+    }
+
+    fn get_original_content(&self) -> &str {
+        &self.loop_content[0..self.original_content_length]
     }
 }
 
@@ -179,13 +186,13 @@ pub fn create_progress_bar_single() -> ProgressBar {
 /// `rx` 用于接收下载任务发送的已下载字节数；任务以固定频率刷新滚动文本并在下载完成后调用 finish
 pub fn spawn_progress_updater(
     pb: ProgressBar,
-    filename: String,
+    filename: &str,
     prefix: String,
     total_size: u64,
     mut rx: mpsc::Receiver<u64>,
 ) -> JoinHandle<()> {
+    let filename_scroller = StringScroller::new(&filename, 30);
     tokio::spawn(async move {
-        let filename_scroller = StringScroller::new(&filename, 30);
         let mut downloaded: u64 = 0;
         let mut ticks: usize = 0;
         let mut interval = tokio::time::interval(Duration::from_millis(TICK_INTERVAL_MS));
@@ -211,7 +218,11 @@ pub fn spawn_progress_updater(
         }
 
         pb.set_style(PB_FINISHED_STYLE.clone());
-        pb.finish_with_message(format!("{}✓完成 {}", prefix, filename));
+        pb.finish_with_message(format!(
+            "{}✓完成 {}",
+            prefix,
+            filename_scroller.get_original_content()
+        ));
 
         // 清除全局进度条引用
         crate::global_config::clear_global_progress();

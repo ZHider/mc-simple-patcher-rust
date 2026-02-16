@@ -39,15 +39,6 @@ pub fn get_file_length(resp: &Response) -> Result<u64> {
     }
 }
 
-/// 确保响应成功
-pub fn ensure_success_response(response: &reqwest::Response) -> Result<()> {
-    if !response.status().is_success() {
-        Err(anyhow::anyhow!("下载失败，状态码: {}", response.status()))
-    } else {
-        Ok(())
-    }
-}
-
 pub fn decompress_gz_sync(gz_path: &Path, output_path: &Path) -> Result<()> {
     use flate2::read::GzDecoder;
     use std::fs::File;
@@ -59,4 +50,15 @@ pub fn decompress_gz_sync(gz_path: &Path, output_path: &Path) -> Result<()> {
     let mut output_file = File::create(output_path)?;
     copy(&mut decoder, &mut output_file)?;
     Ok(())
+}
+
+pub async fn url_get(url: &str) -> Result<Response> {
+    use super::build_request;
+    use super::create_http_client;
+
+    let client = create_http_client()?;
+    build_request(client.get(url))
+        .send()
+        .await
+        .context("reqwest error in url get")
 }
