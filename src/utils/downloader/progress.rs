@@ -9,6 +9,10 @@ pub const PROGRESS_BAR_REFREST_RATE: u8 = 4;
 pub const TICK_INTERVAL_MS: u64 = 250;
 
 /// 设置多进度条容器
+/// 
+/// # Returns
+/// 
+/// * `MultiProgress` - 多进度条实例
 pub fn setup_multi_progress() -> MultiProgress {
     let multi_progress = MultiProgress::new();
     multi_progress.set_draw_target(indicatif::ProgressDrawTarget::stderr_with_hz(
@@ -125,6 +129,18 @@ static PB_DOWNLOADING_STYLE: LazyLock<ProgressStyle> = std::sync::LazyLock::new(
 });
 
 /// 创建和配置进度条
+/// 
+/// # Arguments
+/// 
+/// * `multi_progress` - 多进度条实例的引用
+/// * `file_size` - 可选的文件大小
+/// * `index` - 当前索引
+/// * `total` - 可选的总数
+/// * `filename` - 文件名的字符串引用
+/// 
+/// # Returns
+/// 
+/// * `ProgressBar` - 进度条实例
 pub fn create_progress_bar(
     multi_progress: &MultiProgress,
     file_size: Option<u64>,
@@ -159,6 +175,11 @@ pub fn create_progress_bar(
     pb
 }
 
+/// 创建单个进度条
+/// 
+/// # Returns
+/// 
+/// * `ProgressBar` - 进度条实例
 pub fn create_progress_bar_single() -> ProgressBar {
     let pb = ProgressBar::new(0);
 
@@ -182,8 +203,20 @@ pub fn create_progress_bar_single() -> ProgressBar {
 }
 
 /// 启动一个独立的进度更新器任务
-///
+/// 
 /// `rx` 用于接收下载任务发送的已下载字节数；任务以固定频率刷新滚动文本并在下载完成后调用 finish
+/// 
+/// # Arguments
+/// 
+/// * `pb` - 进度条实例
+/// * `filename` - 文件名的字符串引用
+/// * `prefix` - 前缀字符串
+/// * `total_size` - 总大小
+/// * `rx` - 接收已下载字节数的通道接收器
+/// 
+/// # Returns
+/// 
+/// * `JoinHandle<()>` - 异步任务句柄
 pub fn spawn_progress_updater(
     pb: ProgressBar,
     filename: &str,

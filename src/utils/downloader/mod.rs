@@ -17,6 +17,10 @@ use tokio::io::AsyncWriteExt;
 static HTTP_CLIENT_TEMPLATE: OnceLock<reqwest::Client> = OnceLock::new();
 
 /// 根据网络配置创建HTTP客户端
+/// 
+/// # Returns
+/// 
+/// * `Result<reqwest::Client>` - 成功时返回HTTP客户端，失败时返回错误
 pub fn create_http_client() -> Result<reqwest::Client> {
     fn init_client_template() -> reqwest::Client {
         let config = get_global_config();
@@ -59,6 +63,18 @@ pub struct DownloadTask {
 }
 
 /// 内部下载函数，实现核心下载逻辑
+/// 
+/// # Arguments
+/// 
+/// * `url` - 下载链接的字符串引用
+/// * `dest_path` - 目标路径的引用
+/// * `check_sha256` - 是否检查SHA256校验和
+/// * `progress_bar` - 可选的进度条
+/// * `stop_if_cannot_check_integrity` - 如果无法检查完整性是否停止
+/// 
+/// # Returns
+/// 
+/// * `Result<bool>` - 成功时返回布尔值表示是否进行了下载，失败时返回错误
 async fn download_file_internal(
     url: &str,
     dest_path: &Path,
@@ -108,6 +124,15 @@ async fn download_file_internal(
 }
 
 /// 确定下载源和目标路径，处理GZ压缩文件的情况
+/// 
+/// # Arguments
+/// 
+/// * `url` - 下载链接的字符串引用
+/// * `dest_path` - 目标路径的引用
+/// 
+/// # Returns
+/// 
+/// * `Result<(reqwest::Response, std::path::PathBuf, bool)>` - 成功时返回响应、路径和是否压缩的元组，失败时返回错误
 async fn determine_gz_support(
     url: &str,
     dest_path: &Path,
@@ -134,6 +159,14 @@ async fn determine_gz_support(
 }
 
 /// 更新metadata
+/// 
+/// # Arguments
+/// 
+/// * `dest_path` - 目标路径的引用
+/// 
+/// # Returns
+/// 
+/// * `Result<bool>` - 成功时返回布尔值表示是否更新了元数据，失败时返回错误
 pub async fn update_metadata(dest_path: &Path) -> Result<bool> {
     let config = get_global_config();
     let metadata = config.metadata_config.metadata.as_deref().unwrap();
@@ -141,12 +174,30 @@ pub async fn update_metadata(dest_path: &Path) -> Result<bool> {
 }
 
 /// 单文件下载
+/// 
+/// # Arguments
+/// 
+/// * `url` - 下载链接的字符串引用
+/// * `dest_path` - 目标路径的引用
+/// * `check_sha256` - 是否检查SHA256校验和
+/// 
+/// # Returns
+/// 
+/// * `Result<bool>` - 成功时返回布尔值表示是否进行了下载，失败时返回错误
 pub async fn download_file(url: &str, dest_path: &Path, check_sha256: bool) -> Result<bool> {
     let pb = progress::create_progress_bar_single();
     download_file_internal(url, dest_path, check_sha256, Some(pb), false).await
 }
 
 /// 使用 indicatif 多进度条批量下载文件，接受迭代器
+/// 
+/// # Arguments
+/// 
+/// * `tasks` - 下载任务的迭代器
+/// 
+/// # Returns
+/// 
+/// * `Result<()>` - 成功时返回空值，失败时返回错误
 pub async fn download_files_with_progress<I>(tasks: I) -> Result<()>
 where
     I: IntoIterator<Item = DownloadTask>,

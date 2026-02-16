@@ -13,6 +13,14 @@ use std::path::Path;
 use std::sync::Arc;
 
 /// 计算文件的SHA256哈希值
+/// 
+/// # Arguments
+/// 
+/// * `file_path` - 文件路径的引用
+/// 
+/// # Returns
+/// 
+/// * `Result<Bytes>` - 成功时返回文件的SHA256哈希值，失败时返回错误
 pub fn calculate_file_sha256(file_path: &Path) -> Result<Bytes> {
     let mut file = File::open(file_path)?;
     let mut hasher = Sha256::new();
@@ -31,10 +39,27 @@ pub fn calculate_file_sha256(file_path: &Path) -> Result<Bytes> {
 }
 
 /// 打印完整的错误信息和错误链
+/// 
+/// # Arguments
+/// 
+/// * `err` - 错误对象的引用
+/// 
+/// # Returns
+/// 
+/// 无返回值
 pub fn print_error_chain(err: &Error) {
     log::error!("{}", format_error_chain(err));
 }
 
+/// 格式化错误信息链
+/// 
+/// # Arguments
+/// 
+/// * `err` - 错误对象的引用
+/// 
+/// # Returns
+/// 
+/// * `String` - 格式化后的错误信息链字符串
 pub fn format_error_chain(err: &Error) -> String {
     let mut result = "\n === 错误信息链（Caused by）===\n".to_string();
     err.chain().enumerate().for_each(|(i, cause)| {
@@ -44,6 +69,15 @@ pub fn format_error_chain(err: &Error) -> String {
     result
 }
 
+/// 获取文件名
+/// 
+/// # Arguments
+/// 
+/// * `file_path` - 文件路径的引用
+/// 
+/// # Returns
+/// 
+/// * `Result<Arc<str>>` - 成功时返回文件名的原子引用计数字符串，失败时返回错误
 pub fn get_filename(file_path: &Path) -> Result<Arc<str>> {
     Ok(Arc::from(
         file_path

@@ -72,6 +72,14 @@ pub struct Config {
 }
 
 /// 解析配置文件
+/// 
+/// # Arguments
+/// 
+/// * `path` - 配置文件的路径
+/// 
+/// # Returns
+/// 
+/// * `Result<Config>` - 成功时返回解析后的配置对象，失败时返回错误
 pub fn parse_config<P: AsRef<Path>>(path: P) -> Result<Config> {
     // log::trace!("{:?}", path.as_ref());
     let contents = fs::read_to_string(path)?;
@@ -81,6 +89,14 @@ pub fn parse_config<P: AsRef<Path>>(path: P) -> Result<Config> {
 }
 
 /// 验证配置的有效性
+/// 
+/// # Arguments
+/// 
+/// * `config` - 待验证的配置对象
+/// 
+/// # Returns
+/// 
+/// * `Result<()>` - 验证通过时返回空值，验证失败时返回错误
 fn validate_config(config: &Config) -> Result<()> {
     if config.network.quic {
         log::warn!("已开启 HTTP3/QUIC/UDP 协议！");
@@ -134,6 +150,14 @@ fn validate_config(config: &Config) -> Result<()> {
 }
 
 /// 获取配置中的元数据信息
+/// 
+/// # Arguments
+/// 
+/// * `config` - 配置对象的引用
+/// 
+/// # Returns
+/// 
+/// * `String` - 返回格式化的元数据信息字符串
 pub fn get_metadata_info(config: &Config) -> String {
     match (
         &config.metadata_config.metadata,

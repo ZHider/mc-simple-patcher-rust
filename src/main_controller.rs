@@ -20,6 +20,14 @@ use rayon::prelude::*;
 pub const DEFAULT_MAX_DEPTH: usize = 5;
 
 /// 执行补丁操作
+/// 
+/// # Arguments
+/// 
+/// * `config` - 配置对象的原子引用计数指针
+/// 
+/// # Returns
+/// 
+/// * `Result<()>` - 成功时返回空值，失败时返回错误
 pub async fn execute_patch(config: Arc<Config>) -> Result<()> {
     log::info!("开始执行补丁操作");
     log::debug!("当前有 {} 个组需要处理", config.groups.len());
@@ -34,6 +42,14 @@ pub async fn execute_patch(config: Arc<Config>) -> Result<()> {
 }
 
 /// 处理单个组
+/// 
+/// # Arguments
+/// 
+/// * `group` - 组配置的引用
+/// 
+/// # Returns
+/// 
+/// * `Result<()>` - 成功时返回空值，失败时返回错误
 async fn process_group(group: &GroupConfig) -> Result<()> {
     log::info!("处理组: anchor={}", group.anchor);
     log::debug!("组配置: {:?}", group);
@@ -110,6 +126,15 @@ async fn process_group(group: &GroupConfig) -> Result<()> {
 }
 
 /// 处理镜像模式
+/// 
+/// # Arguments
+/// 
+/// * `files` - 文件迭代器
+/// * `group` - 组配置的引用
+/// 
+/// # Returns
+/// 
+/// * `Result<()>` - 成功时返回空值，失败时返回错误
 async fn execute_mirror_mode<I>(files: I, group: &GroupConfig) -> Result<()>
 where
     I: Iterator,
@@ -139,6 +164,18 @@ where
 }
 
 /// 同步文件
+/// 
+/// # Arguments
+/// 
+/// * `existing_files` - 现有文件路径切片的引用
+/// * `group` - 组配置的引用
+/// * `work_dir` - 工作目录路径的引用
+/// * `modinfo_cache` - MOD信息缓存
+/// * `files_left_from_existing` - 剩余文件集合的可选可变引用
+/// 
+/// # Returns
+/// 
+/// * `Result<()>` - 成功时返回空值，失败时返回错误
 async fn sync_files(
     existing_files: &[PathBuf],
     group: &GroupConfig,
@@ -187,6 +224,16 @@ async fn sync_files(
     Ok(())
 }
 
+/// 构建文件下载信息
+/// 
+/// # Arguments
+/// 
+/// * `work_dir` - 工作目录路径的引用
+/// * `file_rule` - 文件规则的引用
+/// 
+/// # Returns
+/// 
+/// * `Result<Option<DownloadTask>, anyhow::Error>` - 成功时返回下载任务选项，失败时返回错误
 async fn build_file_downloadinfo(
     work_dir: &Path,
     file_rule: &crate::config::FileRule,
@@ -212,6 +259,14 @@ async fn build_file_downloadinfo(
 }
 
 /// 检查并恢复禁用的文件
+/// 
+/// # Arguments
+/// 
+/// * `file_path` - 文件路径的引用
+/// 
+/// # Returns
+/// 
+/// * `Result<bool>` - 成功时返回布尔值表示是否恢复了文件，失败时返回错误
 fn handle_disabled_file(file_path: &Path) -> Result<bool> {
     if let Some(disabled_path) = file_manager::find_disabled_file(file_path) {
         log::info!("恢复禁用文件: {}", disabled_path.display());

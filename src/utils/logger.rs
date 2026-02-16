@@ -112,6 +112,14 @@ impl log::Log for DualLogger {
 }
 
 /// 初始化日志系统
+/// 
+/// # Arguments
+/// 
+/// * `debug` - 是否启用调试模式
+/// 
+/// # Returns
+/// 
+/// * `Result<()>` - 成功时返回空值，失败时返回错误
 pub fn init_logger(debug: bool) -> Result<()> {
     let logger = DualLogger::new(debug)?;
 
