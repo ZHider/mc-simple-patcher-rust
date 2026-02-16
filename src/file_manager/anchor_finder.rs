@@ -5,15 +5,15 @@ use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 
 /// 搜索锚点并返回工作目录
-/// 
+///
 /// # Arguments
-/// 
+///
 /// * `anchor_name` - 锚点名称的字符串引用
 /// * `start_dir` - 起始目录路径的引用
 /// * `max_depth` - 最大搜索深度
-/// 
+///
 /// # Returns
-/// 
+///
 /// * `Option<PathBuf>` - 如果找到锚点则返回路径，否则返回 None
 pub fn find_anchor(anchor_name: &str, start_dir: &Path, max_depth: usize) -> Option<PathBuf> {
     log::info!("开始搜索锚点: {}", anchor_name);
@@ -57,15 +57,15 @@ fn search_sub_dirs(anchor_name: &str, start_dir: &Path, max_depth: usize) -> Opt
 }
 
 /// 应用锚点搜索优化策略
-/// 
+///
 /// # Arguments
-/// 
+///
 /// * `anchor_name` - 锚点名称的字符串引用
 /// * `start_dir` - 起始目录路径的引用
 /// * `max_depth` - 最大搜索深度
-/// 
+///
 /// # Returns
-/// 
+///
 /// * `Option<PathBuf>` - 如果找到锚点则返回路径，否则返回 None
 pub fn find_anchor_optimized(
     anchor_name: &str,

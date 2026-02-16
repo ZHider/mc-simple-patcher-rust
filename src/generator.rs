@@ -32,13 +32,13 @@ struct GenerateRule {
 }
 
 /// 从 TOML 文件生成配置
-/// 
+///
 /// # Arguments
-/// 
+///
 /// * `toml_file` - 输入的 TOML 配置文件路径
-/// 
+///
 /// # Returns
-/// 
+///
 /// * `Result<()>` - 成功时返回空值，失败时返回错误
 pub async fn generate_config_from_toml(toml_file: PathBuf) -> Result<()> {
     log::info!("开始从 {} 生成配置文件", toml_file.display());
@@ -101,9 +101,9 @@ pub async fn generate_config_from_toml(toml_file: PathBuf) -> Result<()> {
 
 // 将 generated_groups 转换为 toml groups table array，更新到generator_config中
 /// 将生成的文件组注入到生成器配置中
-/// 
+///
 /// # Arguments
-/// 
+///
 /// * `generator_config` - 生成器配置的可变引用
 /// * `generated_file_groups` - 生成的文件组向量
 fn inject_generator_config(
@@ -118,13 +118,13 @@ fn inject_generator_config(
 }
 
 /// 加载生成配置
-/// 
+///
 /// # Arguments
-/// 
+///
 /// * `toml_file` - TOML 配置文件的路径引用
-/// 
+///
 /// # Returns
-/// 
+///
 /// * `Result<HashMap<String, Value>>` - 成功时返回配置映射，失败时返回错误
 fn load_generate_config(toml_file: &Path) -> Result<HashMap<String, Value>> {
     let generate_rules_str = fs::read_to_string(toml_file)
@@ -135,13 +135,13 @@ fn load_generate_config(toml_file: &Path) -> Result<HashMap<String, Value>> {
 }
 
 /// 提取生成规则列表
-/// 
+///
 /// # Arguments
-/// 
+///
 /// * `generate_config` - 生成配置的引用
-/// 
+///
 /// # Returns
-/// 
+///
 /// * `Result<Vec<GenerateRule>>` - 成功时返回生成规则向量，失败时返回错误
 fn extract_generator_rules(generate_config: &HashMap<String, Value>) -> Result<Vec<GenerateRule>> {
     generate_config
@@ -159,13 +159,13 @@ fn extract_generator_rules(generate_config: &HashMap<String, Value>) -> Result<V
 }
 
 /// 处理单个生成规则
-/// 
+///
 /// # Arguments
-/// 
+///
 /// * `rule` - 生成规则的引用
-/// 
+///
 /// # Returns
-/// 
+///
 /// * `Result<Option<crate::config::GroupConfig>>` - 成功时返回组配置选项，失败时返回错误
 fn process_generate_rule(rule: &GenerateRule) -> Result<Option<crate::config::GroupConfig>> {
     // 查找锚点目录
@@ -209,14 +209,14 @@ fn process_generate_rule(rule: &GenerateRule) -> Result<Option<crate::config::Gr
 }
 
 /// 创建组配置
-/// 
+///
 /// # Arguments
-/// 
+///
 /// * `rule` - 生成规则的引用
 /// * `files` - 文件路径向量
-/// 
+///
 /// # Returns
-/// 
+///
 /// * `Result<crate::config::GroupConfig>` - 成功时返回组配置，失败时返回错误
 fn create_group_config(
     rule: &GenerateRule,
@@ -305,14 +305,14 @@ impl FileProcessingProgressTracker {
 }
 
 /// 创建文件规则
-/// 
+///
 /// # Arguments
-/// 
+///
 /// * `rule` - 生成规则的引用
 /// * `file_path` - 文件路径的引用
-/// 
+///
 /// # Returns
-/// 
+///
 /// * `Result<crate::config::FileRule>` - 成功时返回文件规则，失败时返回错误
 fn create_file_rule(rule: &GenerateRule, file_path: &Path) -> Result<crate::config::FileRule> {
     log::debug!("处理文件: {}", file_path.display());
@@ -389,14 +389,14 @@ fn create_file_rule(rule: &GenerateRule, file_path: &Path) -> Result<crate::conf
 }
 
 /// 写入生成的配置文件
-/// 
+///
 /// # Arguments
-/// 
+///
 /// * `generated_config` - 生成的配置映射
 /// * `dst_path` - 目标路径的引用
-/// 
+///
 /// # Returns
-/// 
+///
 /// * `Result<()>` - 成功时返回空值，失败时返回错误
 fn write_generated_config(generated_config: HashMap<String, Value>, dst_path: &Path) -> Result<()> {
     // 生成输出文件名
@@ -425,13 +425,13 @@ fn write_generated_config(generated_config: HashMap<String, Value>, dst_path: &P
 }
 
 /// 生成sha256文件
-/// 
+///
 /// # Arguments
-/// 
+///
 /// * `file_path` - 文件路径的引用
-/// 
+///
 /// # Returns
-/// 
+///
 /// * `Result<()>` - 成功时返回空值，失败时返回错误
 pub fn write_sha256(file_path: &Path) -> Result<()> {
     let sha256 =

@@ -4,13 +4,13 @@ use anyhow::Result;
 use std::{path::Path, time::Duration};
 
 /// 从HTTP响应头中尝试获取SHA256哈希值
-/// 
+///
 /// # Arguments
-/// 
+///
 /// * `response` - HTTP响应的引用
-/// 
+///
 /// # Returns
-/// 
+///
 /// * `Option<String>` - 如果找到SHA256哈希值则返回，否则返回 None
 fn get_sha256_from_headers(response: &reqwest::Response) -> Option<String> {
     // 尝试从多种可能的头部获取哈希值
@@ -36,14 +36,14 @@ fn get_sha256_from_headers(response: &reqwest::Response) -> Option<String> {
 }
 
 /// 从URL获取对应的.sha256文件内容
-/// 
+///
 /// # Arguments
-/// 
+///
 /// * `client` - HTTP客户端的引用
 /// * `url` - URL字符串的引用
-/// 
+///
 /// # Returns
-/// 
+///
 /// * `Option<String>` - 如果成功获取到SHA256哈希值则返回，否则返回 None
 async fn get_sha256_from_file(client: &reqwest::Client, url: &str) -> Option<String> {
     // 构造.sha256文件的URL，直接在原URL后添加.sha256
@@ -65,14 +65,14 @@ async fn get_sha256_from_file(client: &reqwest::Client, url: &str) -> Option<Str
 }
 
 /// 检查文件是否已存在且与远程文件哈希值匹配
-/// 
+///
 /// # Arguments
-/// 
+///
 /// * `url` - URL字符串的引用
 /// * `dest_path` - 目标文件路径的引用
-/// 
+///
 /// # Returns
-/// 
+///
 /// * `Result<Option<bool>>` - 成功时返回可选的布尔值表示文件完整性，失败时返回错误
 pub async fn check_file_integrity(url: &str, dest_path: &Path) -> Result<Option<bool>> {
     if !dest_path.exists() {

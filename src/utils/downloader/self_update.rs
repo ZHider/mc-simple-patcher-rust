@@ -10,13 +10,13 @@ use crate::utils::downloader;
 use crate::utils::downloader::hash_check;
 
 /// 检查并执行自更新
-/// 
+///
 /// # Arguments
-/// 
+///
 /// * `config` - 配置对象的引用
-/// 
+///
 /// # Returns
-/// 
+///
 /// * `Result<bool>` - 成功时返回布尔值表示是否进行了更新，失败时返回错误
 pub async fn check_for_update(config: &crate::config::Config) -> Result<bool> {
     if let Some(update_url) = &config.self_update_url {
@@ -42,13 +42,13 @@ pub async fn check_for_update(config: &crate::config::Config) -> Result<bool> {
 }
 
 /// 执行更新过程
-/// 
+///
 /// # Arguments
-/// 
+///
 /// * `update_url` - 更新URL的字符串引用
-/// 
+///
 /// # Returns
-/// 
+///
 /// * `Result<bool>` - 成功时返回布尔值表示是否进行了更新，失败时返回错误
 async fn perform_update(update_url: &str) -> Result<bool> {
     // 获取当前可执行文件路径
@@ -87,28 +87,28 @@ async fn perform_update(update_url: &str) -> Result<bool> {
 }
 
 /// 检查是否不需要更新
-/// 
+///
 /// # Arguments
-/// 
+///
 /// * `url` - URL字符串的引用
 /// * `dest_path` - 目标路径的引用
-/// 
+///
 /// # Returns
-/// 
+///
 /// * `Result<Option<bool>>` - 成功时返回可选的布尔值表示是否需要更新，失败时返回错误
 async fn check_neednot_update(url: &str, dest_path: &Path) -> Result<Option<bool>> {
     hash_check::check_file_integrity(url, dest_path).await
 }
 
 /// 替换当前可执行文件
-/// 
+///
 /// # Arguments
-/// 
+///
 /// * `current_exe` - 当前可执行文件路径的引用
 /// * `new_exe` - 新可执行文件路径的引用
-/// 
+///
 /// # Returns
-/// 
+///
 /// * `Result<()>` - 成功时返回空值，失败时返回错误
 fn replace_executable(current_exe: &Path, new_exe: &Path) -> Result<()> {
     // 在Windows上，我们需要特殊处理，因为可执行文件可能正在运行

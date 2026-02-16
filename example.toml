@@ -16,7 +16,9 @@ quic = false
 # 是否忽略证书错误，默认为false
 ignore_invalid_cert = true
 # 下载超时时间，默认15秒
-timeout = 15
+timeout = 10
+# 下载遇到错误时重试次数，默认3次
+retry = 5
 
 # 以下都是必须项目。
 [[groups]]

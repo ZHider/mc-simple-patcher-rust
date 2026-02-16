@@ -13,15 +13,15 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 /// 检查文件是否匹配规则
-/// 
+///
 /// # Arguments
-/// 
+///
 /// * `file_path` - 文件路径的引用
 /// * `rule` - 文件规则的引用
 /// * `cache` - MOD信息缓存的引用
-/// 
+///
 /// # Returns
-/// 
+///
 /// * `Result<bool>` - 成功时返回布尔值表示是否匹配，失败时返回错误
 pub fn matches_rule(file_path: &Path, rule: &FileRule, cache: &ModInfoCache) -> Result<bool> {
     // log::trace!("matches_rule: {:?}", file_path);
@@ -57,14 +57,14 @@ fn check_name_match(file_name: &str, rule: &FileRule) -> bool {
 }
 
 /// 检查正则表达式是否匹配
-/// 
+///
 /// # Arguments
-/// 
+///
 /// * `file_name` - 文件名字符串的引用
 /// * `rule` - 文件规则的引用
-/// 
+///
 /// # Returns
-/// 
+///
 /// * `bool` - 如果匹配则返回true，否则返回false
 pub fn check_pattern_match(file_name: &str, rule: &FileRule) -> bool {
     if let Some(ref pattern) = rule.name_pattern {
@@ -118,13 +118,13 @@ fn check_sha256_match(rule: &FileRule, cache: &ModInfoCache) -> Result<bool> {
 }
 
 /// 检查是否存在对应的 .jar.disabled 文件
-/// 
+///
 /// # Arguments
-/// 
+///
 /// * `file_path` - 文件路径的引用
-/// 
+///
 /// # Returns
-/// 
+///
 /// * `Option<PathBuf>` - 如果存在则返回禁用文件路径，否则返回 None
 pub fn find_disabled_file(file_path: &Path) -> Option<PathBuf> {
     let disabled_path = create_disabled_path(file_path);
@@ -147,13 +147,13 @@ fn create_disabled_path(file_path: &Path) -> PathBuf {
 }
 
 /// 恢复 .jar.disabled 文件
-/// 
+///
 /// # Arguments
-/// 
+///
 /// * `disabled_path` - 禁用文件路径的引用
-/// 
+///
 /// # Returns
-/// 
+///
 /// * `Result<PathBuf>` - 成功时返回恢复后的路径，失败时返回错误
 pub fn restore_disabled_file(disabled_path: &Path) -> Result<PathBuf> {
     let restored_path = disabled_path.with_extension("");
@@ -164,15 +164,15 @@ pub fn restore_disabled_file(disabled_path: &Path) -> Result<PathBuf> {
 }
 
 /// 获取目录中的所有文件
-/// 
+///
 /// # Arguments
-/// 
+///
 /// * `dir_path` - 目录路径的引用
 /// * `recursive` - 是否递归搜索
 /// * `rule` - 可选的正则表达式规则引用
-/// 
+///
 /// # Returns
-/// 
+///
 /// * `Result<Vec<PathBuf>>` - 成功时返回文件路径向量，失败时返回错误
 pub fn get_files_in_dir(
     dir_path: &Path,

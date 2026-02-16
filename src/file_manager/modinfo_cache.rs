@@ -126,13 +126,13 @@ impl ExtractProgressTracker {
 }
 
 /// 从 JAR 文件中提取 mod 信息
-/// 
+///
 /// # Arguments
-/// 
+///
 /// * `jar_path` - JAR 文件路径的引用
-/// 
+///
 /// # Returns
-/// 
+///
 /// * `Result<(String, String)>` - 成功时返回 (mod_id, mod_version) 元组，失败时返回错误
 pub fn extract_mod_info_from_jar(jar_path: &Path) -> Result<(String, String)> {
     use std::fs::File;

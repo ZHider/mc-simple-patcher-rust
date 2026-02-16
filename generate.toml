@@ -10,6 +10,7 @@ version = 0
 [network]
 quic = true
 ignore_invalid_cert = false
+timeout = 10
 
 [[generate]]
 # 锚点文件/文件夹，用于定位工作目录

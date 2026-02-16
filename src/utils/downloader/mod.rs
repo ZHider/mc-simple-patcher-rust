@@ -11,15 +11,21 @@ use progress::{create_progress_bar, setup_multi_progress, spawn_progress_updater
 use reqwest::{self};
 use std::{path::Path, sync::OnceLock, time::Duration};
 // Duration not needed here; kept in progress.rs
-use crate::{global_config::get_global_config, utils::{downloader::helpers::url_get, get_filename}};
-use tokio::io::AsyncWriteExt;
+use crate::{
+    global_config::get_global_config,
+    utils::{
+        downloader::helpers::{support_download_range, url_get, url_get_range},
+        get_filename,
+    },
+};
+use tokio::io::{AsyncSeekExt, AsyncWriteExt};
 
 static HTTP_CLIENT_TEMPLATE: OnceLock<reqwest::Client> = OnceLock::new();
 
 /// 根据网络配置创建HTTP客户端
-/// 
+///
 /// # Returns
-/// 
+///
 /// * `Result<reqwest::Client>` - 成功时返回HTTP客户端，失败时返回错误
 pub fn create_http_client() -> Result<reqwest::Client> {
     fn init_client_template() -> reqwest::Client {
@@ -63,17 +69,17 @@ pub struct DownloadTask {
 }
 
 /// 内部下载函数，实现核心下载逻辑
-/// 
+///
 /// # Arguments
-/// 
+///
 /// * `url` - 下载链接的字符串引用
 /// * `dest_path` - 目标路径的引用
 /// * `check_sha256` - 是否检查SHA256校验和
 /// * `progress_bar` - 可选的进度条
 /// * `stop_if_cannot_check_integrity` - 如果无法检查完整性是否停止
-/// 
+///
 /// # Returns
-/// 
+///
 /// * `Result<bool>` - 成功时返回布尔值表示是否进行了下载，失败时返回错误
 async fn download_file_internal(
     url: &str,
@@ -124,14 +130,14 @@ async fn download_file_internal(
 }
 
 /// 确定下载源和目标路径，处理GZ压缩文件的情况
-/// 
+///
 /// # Arguments
-/// 
+///
 /// * `url` - 下载链接的字符串引用
 /// * `dest_path` - 目标路径的引用
-/// 
+///
 /// # Returns
-/// 
+///
 /// * `Result<(reqwest::Response, std::path::PathBuf, bool)>` - 成功时返回响应、路径和是否压缩的元组，失败时返回错误
 async fn determine_gz_support(
     url: &str,
@@ -159,13 +165,13 @@ async fn determine_gz_support(
 }
 
 /// 更新metadata
-/// 
+///
 /// # Arguments
-/// 
+///
 /// * `dest_path` - 目标路径的引用
-/// 
+///
 /// # Returns
-/// 
+///
 /// * `Result<bool>` - 成功时返回布尔值表示是否更新了元数据，失败时返回错误
 pub async fn update_metadata(dest_path: &Path) -> Result<bool> {
     let config = get_global_config();
@@ -174,15 +180,15 @@ pub async fn update_metadata(dest_path: &Path) -> Result<bool> {
 }
 
 /// 单文件下载
-/// 
+///
 /// # Arguments
-/// 
+///
 /// * `url` - 下载链接的字符串引用
 /// * `dest_path` - 目标路径的引用
 /// * `check_sha256` - 是否检查SHA256校验和
-/// 
+///
 /// # Returns
-/// 
+///
 /// * `Result<bool>` - 成功时返回布尔值表示是否进行了下载，失败时返回错误
 pub async fn download_file(url: &str, dest_path: &Path, check_sha256: bool) -> Result<bool> {
     let pb = progress::create_progress_bar_single();
@@ -190,13 +196,13 @@ pub async fn download_file(url: &str, dest_path: &Path, check_sha256: bool) -> R
 }
 
 /// 使用 indicatif 多进度条批量下载文件，接受迭代器
-/// 
+///
 /// # Arguments
-/// 
+///
 /// * `tasks` - 下载任务的迭代器
-/// 
+///
 /// # Returns
-/// 
+///
 /// * `Result<()>` - 成功时返回空值，失败时返回错误
 pub async fn download_files_with_progress<I>(tasks: I) -> Result<()>
 where
@@ -273,7 +279,7 @@ async fn download_with_progress_logic(
     pb: ProgressBar,
 ) -> Result<bool> {
     // 初始化进度条参数
-    initialize_progress_bar(&response, &pb, dest_path)?;
+    let total_size = initialize_progress_bar(&response, &pb, dest_path)?;
 
     // 创建目标文件
     let mut dest_file = create_destination_file(dest_path).await?;
@@ -282,7 +288,7 @@ async fn download_with_progress_logic(
     let (tx, updater_handle) = setup_progress_update_task(&pb, dest_path, &response).await?;
 
     // 开始下载并实时更新进度
-    perform_download_with_progress_updates(&mut dest_file, response, &tx).await?;
+    download_with_retries(response, total_size, &mut dest_file, &tx).await?;
 
     // 完成下载后清理资源
     finalize_download(dest_file, tx, updater_handle).await?;
@@ -290,12 +296,45 @@ async fn download_with_progress_logic(
     Ok(true)
 }
 
+async fn download_with_retries(
+    response: reqwest::Response,
+    total_size: u64,
+    dest_file: &mut tokio::fs::File,
+    tx: &tokio::sync::mpsc::Sender<u64>,
+) -> Result<(), anyhow::Error> {
+    let retry_max = get_global_config().network.retry;
+    let url = response.url().to_string();
+    let range_type = support_download_range(&response)?;
+    let mut value = download_with_progress_updates(dest_file, response, tx).await;
+    let mut i = 0;
+
+    Ok(while let Err(e) = value {
+        log::error!("{e}");
+        if i >= retry_max {
+            anyhow::bail!("用尽重试次数，下载失败！");
+        }
+
+        i += 1;
+        log::warn!("下载错误，第 {i} 次重试");
+
+        dest_file.flush().await?;
+        let cur_length = dest_file.stream_position().await?;
+        let response = if let Some(ref rt) = range_type {
+            url_get_range(&url, rt, cur_length, total_size).await?
+        } else {
+            url_get(&url).await?
+        };
+
+        value = download_with_progress_updates(dest_file, response, tx).await;
+    })
+}
+
 /// 初始化进度条参数
 fn initialize_progress_bar(
     response: &reqwest::Response,
     pb: &ProgressBar,
     dest_path: &Path,
-) -> Result<()> {
+) -> Result<u64> {
     let total_size = get_file_length(response)?;
     pb.set_length(total_size);
     log::debug!(
@@ -303,7 +342,7 @@ fn initialize_progress_bar(
         get_filename(dest_path)?,
         total_size
     );
-    Ok(())
+    Ok(total_size)
 }
 
 /// 创建目标文件
@@ -342,7 +381,7 @@ async fn setup_progress_update_task(
 }
 
 /// 执行下载并实时更新进度
-async fn perform_download_with_progress_updates(
+async fn download_with_progress_updates(
     dest_file: &mut tokio::fs::File,
     response: reqwest::Response,
     tx: &tokio::sync::mpsc::Sender<u64>,
@@ -354,7 +393,8 @@ async fn perform_download_with_progress_updates(
         .map_err(|e| std::io::Error::other(format!("reqwest error: {}", e)))
         .into_async_read();
 
-    let mut buffer = vec![0u8; 1024];
+    let mut buffer = [0u8; 1024];
+    let mut downloaded: u64 = dest_file.stream_position().await?;
     loop {
         match response_body.read(&mut buffer).await {
             Ok(n) if n > 0 => {
@@ -364,7 +404,8 @@ async fn perform_download_with_progress_updates(
                     .context("写入文件失败")?;
 
                 // 发送下载字节数到进度更新任务
-                if tx.send(n as u64).await.is_err() {
+                downloaded += n as u64;
+                if tx.send(downloaded).await.is_err() {
                     // 接收方已关闭，停止下载
                     break;
                 }

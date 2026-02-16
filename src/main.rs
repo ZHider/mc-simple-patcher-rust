@@ -20,13 +20,13 @@ pub mod main_controller;
 pub mod utils;
 
 /// 计算并打印文件的SHA256哈希值
-/// 
+///
 /// # Arguments
-/// 
+///
 /// * `file_path` - 文件路径的引用
-/// 
+///
 /// # Returns
-/// 
+///
 /// * `Result<()>` - 成功时返回空值，失败时返回错误
 fn calculate_and_print_file_sha256(file_path: &std::path::Path) -> Result<()> {
     if !file_path.exists() {
@@ -75,9 +75,9 @@ struct Args {
 }
 
 /// 程序入口点
-/// 
+///
 /// # Returns
-/// 
+///
 /// * `Result<()>` - 成功时返回空值，失败时返回错误
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -122,26 +122,26 @@ async fn main() -> Result<()> {
 }
 
 /// 检查URL是否为HTTPS协议
-/// 
+///
 /// # Arguments
-/// 
+///
 /// * `url` - URL字符串的引用
-/// 
+///
 /// # Returns
-/// 
+///
 /// * `bool` - 如果是HTTP或HTTPS协议则返回true，否则返回false
 fn is_https_scheme(url: &str) -> bool {
     url.starts_with("http://") || url.starts_with("https://")
 }
 
 /// 使用URL配置执行更新
-/// 
+///
 /// # Arguments
-/// 
+///
 /// * `url` - 配置文件的URL
-/// 
+///
 /// # Returns
-/// 
+///
 /// * `Result<()>` - 成功时返回空值，失败时返回错误
 async fn execute_with_config_2update(url: String) -> Result<()> {
     // 构建只有metadata-url的config来调起下载行为
@@ -160,9 +160,9 @@ async fn execute_with_config_2update(url: String) -> Result<()> {
 }
 
 /// 检查并执行自更新
-/// 
+///
 /// # Returns
-/// 
+///
 /// 无返回值
 async fn check_self_update() {
     // 解析配置文件以检查是否有更新URL
@@ -182,9 +182,9 @@ async fn check_self_update() {
 }
 
 /// 程序退出前暂停，等待用户按键
-/// 
+///
 /// # Returns
-/// 
+///
 /// 无返回值
 fn pause_before_exit() {
     use std::io::{Write, stdin, stdout};
@@ -200,13 +200,13 @@ fn pause_before_exit() {
 }
 
 /// 解析配置文件并执行补丁
-/// 
+///
 /// # Arguments
-/// 
+///
 /// * `config_path` - 配置文件路径的引用
-/// 
+///
 /// # Returns
-/// 
+///
 /// * `Result<()>` - 成功时返回空值，失败时返回错误
 async fn execute_with_config(config_path: &std::path::Path) -> Result<()> {
     log::info!("正在解析配置文件: {}", config_path.display());
@@ -223,13 +223,13 @@ async fn execute_with_config(config_path: &std::path::Path) -> Result<()> {
 }
 
 /// 更新元数据
-/// 
+///
 /// # Arguments
-/// 
+///
 /// * `dst` - 目标路径的引用
-/// 
+///
 /// # Returns
-/// 
+///
 /// * `Option<config::Config>` - 成功时返回配置选项，失败时返回 None
 async fn update_metadata(dst: &Path) -> Option<config::Config> {
     match downloader::update_metadata(dst).await {
@@ -254,13 +254,13 @@ async fn update_metadata(dst: &Path) -> Option<config::Config> {
 }
 
 /// 解析元数据并更新
-/// 
+///
 /// # Arguments
-/// 
+///
 /// * `config_path` - 配置文件路径的引用
-/// 
+///
 /// # Returns
-/// 
+///
 /// * `Result<config::Config>` - 成功时返回配置对象，失败时返回错误
 async fn parse_metadata_with_update(config_path: &std::path::Path) -> Result<config::Config> {
     let config = config::parse_config(config_path)
