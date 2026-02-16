@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use anyhow::{Context, Ok, Result};
 use reqwest::Response;
 
@@ -44,4 +46,17 @@ pub fn ensure_success_response(response: &reqwest::Response) -> Result<()> {
     } else {
         Ok(())
     }
+}
+
+pub fn decompress_gz_sync(gz_path: &Path, output_path: &Path) -> Result<()> {
+    use flate2::read::GzDecoder;
+    use std::fs::File;
+    use std::io::{BufReader, copy};
+
+    let gz_file = File::open(gz_path)?;
+    let reader = BufReader::new(gz_file);
+    let mut decoder = GzDecoder::new(reader);
+    let mut output_file = File::create(output_path)?;
+    copy(&mut decoder, &mut output_file)?;
+    Ok(())
 }

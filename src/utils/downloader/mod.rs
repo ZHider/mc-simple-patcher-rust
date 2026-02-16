@@ -82,22 +82,46 @@ async fn download_file_internal(
     }
 
     let client = create_http_client()?;
-    let request = client.get(url);
-    let configured_request = build_request(request);
-    let response = configured_request
-        .send()
-        .await
-        .context(format!("无法发送请求到: {}", url))?;
+
+    let gz_enabled: bool;
+    let gz_url = url.to_string() + ".gz";
+    let response = build_request(client.get(&gz_url)).send().await;
+    let response = if response.is_err() {
+        log::debug!("未找到gz压缩包: {gz_url}");
+        gz_enabled = false;
+        build_request(client.get(url))
+            .send()
+            .await
+            .context(format!("无法发送请求到: {}", url))?
+    } else {
+        log::info!("检测到服务器有{gz_url}，正在下载……");
+        gz_enabled = true;
+        response.unwrap()
+    };
 
     ensure_success_response(&response)?;
 
-    if let Some(pb) = progress_bar {
+    let dest_path_gz = if gz_enabled {
+        dest_path.to_path_buf().with_added_extension("gz")
+    } else {
+        dest_path.to_path_buf()
+    };
+
+    let result = if let Some(pb) = progress_bar {
         // 带进度条的下载
-        download_with_progress_logic(response, dest_path, pb).await
+        download_with_progress_logic(response, &dest_path_gz, pb).await?
     } else {
         // 不带进度条的简单下载
-        download_without_progress_logic(response, dest_path).await
+        download_without_progress_logic(response, &dest_path_gz).await?
+    };
+
+    if gz_enabled {
+        log::info!("正在解压文件：{}", dest_path_gz.display());
+        helpers::decompress_gz_sync(&dest_path_gz, dest_path)?;
+        log::info!("已经解压到 {}", dest_path.display());
     }
+
+    Ok(result)
 }
 
 /// 更新metadata
@@ -246,7 +270,7 @@ async fn download_with_progress_logic(
             _ => continue,
         }
     }
-    
+
     let _ = tx.send(0).await;
     dest_file.flush().await.context("刷新文件缓冲区失败")?;
     // 关闭发送端，通知 updater 完成
