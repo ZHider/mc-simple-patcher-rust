@@ -14,8 +14,7 @@ use std::{path::Path, sync::OnceLock, time::Duration};
 use crate::{
     global_config::get_global_config,
     utils::{
-        downloader::helpers::{support_download_range, url_get, url_get_range},
-        get_filename,
+        downloader::helpers::{support_download_range, url_get, url_get_range}, get_filename
     },
 };
 use tokio::io::{AsyncSeekExt, AsyncWriteExt};
@@ -144,18 +143,19 @@ async fn determine_gz_support(
     dest_path: &Path,
 ) -> Result<(reqwest::Response, std::path::PathBuf, bool)> {
     let gz_url = format!("{}.gz", url);
-    let gz_response = url_get(&gz_url).await;
+    let gz_response = url_get(&gz_url).await?;
 
-    match gz_response {
-        Ok(response) => {
+    match gz_response.error_for_status_ref() {
+        Ok(_) => {
             // GZ文件存在，使用压缩版本
             log::info!("检测到服务器有{}，正在下载……", gz_url);
             let dest_path_gz = dest_path.with_added_extension("gz");
-            Ok((response, dest_path_gz, true)) // 需要解压缩
+            Ok((gz_response, dest_path_gz, true)) // 需要解压缩
         }
-        Err(_) => {
+        Err(e) => {
             // GZ文件不存在，使用原始URL
             log::debug!("未找到gz压缩包: {}", gz_url);
+            log::trace!("ERROR: {}", e);
             let response = url_get(url)
                 .await
                 .context(format!("无法发送请求到: {}", url))?;
@@ -308,7 +308,7 @@ async fn download_with_retries(
     let mut value = download_with_progress_updates(dest_file, response, tx).await;
     let mut i = 0;
 
-    Ok(while let Err(e) = value {
+    let _: () = while let Err(e) = value {
         log::error!("{e}");
         if i >= retry_max {
             anyhow::bail!("用尽重试次数，下载失败！");
@@ -326,7 +326,8 @@ async fn download_with_retries(
         };
 
         value = download_with_progress_updates(dest_file, response, tx).await;
-    })
+    };
+    Ok(())
 }
 
 /// 初始化进度条参数
