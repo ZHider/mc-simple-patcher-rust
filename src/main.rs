@@ -7,9 +7,7 @@ use crate::{
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use std::{
-    fs::File,
-    io::Read,
-    path::{Path, PathBuf},
+    fs::File, io::{Read, Write}, path::{Path, PathBuf}
 };
 
 pub mod config;
@@ -187,15 +185,11 @@ async fn check_self_update() {
 ///
 /// 无返回值
 fn pause_before_exit() {
-    use std::io::{Write, stdin, stdout};
-
     print!("\n请按任意键...");
-    let _ = stdout().flush(); // 确保提示信息立即显示
+    let _ = std::io::stdout().flush();
 
     // 读取一个字符
-    let mut input = String::new();
-    let _ = stdin().read_line(&mut input);
-
+    let _ = console::Term::stdout().read_char();
     println!(); // 换行
 }
 
