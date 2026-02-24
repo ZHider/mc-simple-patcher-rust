@@ -13,5 +13,9 @@ pub mod self_update;
 
 pub use batch::download_files_with_progress;
 pub use client::{build_request, create_http_client};
-pub use download::{DownloadTask, download_file, download_file_internal, download_patch_file};
+pub use download::{
+    DownloadTask, download_file, download_file_internal, download_patch_file,
+    download_patch_file_auto,
+};
+pub use helpers::get_filename_from_response;
 pub use metadata::update_metadata;

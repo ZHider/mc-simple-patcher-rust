@@ -1,6 +1,8 @@
 //! 批量下载模块
 //! 实现多文件并发下载
 
+use std::path::PathBuf;
+
 use anyhow::Result;
 use futures::stream::StreamExt;
 
@@ -38,25 +40,38 @@ where
 
     let task_stream = futures::stream::iter(tasks_iter.enumerate().map(move |(idx, task)| {
         let total_copy = total_opt;
-
-        let filename = task
-            .dest_path
-            .file_name()
-            .unwrap_or(std::ffi::OsStr::new("unknown"))
-            .to_string_lossy()
-            .to_string();
-
-        let progress_bar = create_progress_bar(&multi_progress, None, idx, total_copy, &filename);
+        let multi_progress = multi_progress.clone();
 
         async move {
-            download_file_internal(
+            // 先创建进度条（使用 URL 或 dest_path 的文件名作为占位符）
+            let filename = if let Some(ref dp) = task.dest_path {
+                dp.file_name()
+                    .unwrap_or(std::ffi::OsStr::new("unknown"))
+                    .to_string_lossy()
+                    .to_string()
+            } else {
+                // 从 URL 提取临时文件名
+                PathBuf::from(&task.url)
+                    .file_name()
+                    .unwrap_or(std::ffi::OsStr::new("unknown"))
+                    .to_string_lossy()
+                    .to_string()
+            };
+
+            let progress_bar =
+                create_progress_bar(&multi_progress, None, idx, total_copy, &filename);
+
+            // 执行下载
+            let (_, actual_path) = download_file_internal(
                 &task.url,
-                &task.dest_path,
+                task.dest_path.as_deref(),
                 task.check_sha256,
                 Some(progress_bar),
                 false,
             )
             .await?;
+
+            log::debug!("下载完成：{}", actual_path.display());
             Ok(())
         }
     }));

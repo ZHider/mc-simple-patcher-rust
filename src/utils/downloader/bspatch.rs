@@ -118,8 +118,8 @@ pub fn find_patch_source_file(matched_file: &Path, sha256_src: &str) -> Result<O
 pub struct PatchDownloadTask {
     /// 补丁 URL
     pub url: String,
-    /// 补丁保存到临时目录的路径
-    pub dest_path: PathBuf,
+    /// 补丁保存到临时目录的路径（如果为 None，则从 response 获取文件名）
+    pub dest_path: Option<PathBuf>,
     /// 对应的补丁配置
     pub patch: FilePatch,
     /// 源文件路径
@@ -130,7 +130,8 @@ pub struct PatchDownloadTask {
 
 /// 收集补丁下载任务
 ///
-/// 遍历所有文件规则的 patches，收集需要下载的补丁文件到任务列表中。
+/// 遍历所有文件规则的 patches，寻找 sha256_src 与当前匹配文件哈希值匹配的补丁，
+/// 收集需要下载的补丁文件到任务列表中。
 ///
 /// # Arguments
 ///
@@ -142,55 +143,59 @@ pub struct PatchDownloadTask {
 /// # Returns
 ///
 /// * `Result<Option<Vec<PatchDownloadTask>>>` - 成功时返回补丁任务列表，未找到源文件返回 None
-pub fn collect_patch_tasks(
+pub fn match_patch_tasks(
     patches: &[FilePatch],
     work_dir: &Path,
     matched_file: &Path,
     target_file_name: &str,
-) -> Result<Option<Vec<PatchDownloadTask>>> {
+) -> Result<Option<PatchDownloadTask>> {
     if patches.is_empty() {
         return Ok(None);
     }
 
-    log::info!("检测到 {} 个补丁，准备下载...", patches.len());
+    // 计算当前匹配文件的 SHA256
+    let current_hash_bytes = crate::utils::calculate_file_sha256(matched_file)?;
+    let current_hash_hex = hex::encode(current_hash_bytes);
 
-    let mut tasks = Vec::new();
-    let current_src: Option<PathBuf> = None;
+    log::debug!("当前文件 SHA256: {}", current_hash_hex);
 
-    for patch in patches {
-        // 第一个补丁需要查找源文件
-        let src_file = if current_src.is_none() {
-            match find_patch_source_file(matched_file, &patch.sha256_src)? {
-                Some(f) => f,
-                None => {
-                    log::warn!("未找到匹配 sha256_src 的源文件，跳过补丁流程");
-                    return Ok(None);
-                }
-            }
-        } else {
-            current_src.clone().unwrap()
-        };
+    // 寻找 sha256_src 匹配的补丁
+    let matching_patch = patches
+        .iter()
+        .find(|patch| patch.sha256_src == current_hash_hex);
 
-        let dst_file = work_dir.join(target_file_name);
+    let patch = match matching_patch {
+        Some(p) => {
+            log::info!("找到匹配的补丁配置（sha256_src 匹配当前文件）");
+            p
+        }
+        None => {
+            log::debug!("未找到 sha256_src 与当前文件匹配的补丁，跳过补丁流程");
+            return Ok(None);
+        }
+    };
 
-        // 生成补丁文件的临时路径
-        let file_name = Path::new(&patch.url_patch)
-            .file_name()
-            .context(format!("无法从 URL 中提取文件名：{}", patch.url_patch))?
-            .to_string_lossy()
-            .to_string();
-        let dest_path = crate::utils::temp_dir()?.join(&file_name);
+    // 验证源文件确实存在
+    let src_file = match find_patch_source_file(matched_file, &patch.sha256_src)? {
+        Some(f) => f,
+        None => {
+            log::warn!("未找到匹配 sha256_src 的源文件，跳过补丁流程");
+            return Ok(None);
+        }
+    };
 
-        tasks.push(PatchDownloadTask {
-            url: patch.url_patch.clone(),
-            dest_path,
-            patch: patch.clone(),
-            src_file,
-            dst_file,
-        });
-    }
+    let dst_file = work_dir.join(target_file_name);
 
-    Ok(Some(tasks))
+    // 创建补丁下载任务（dest_path 为 None，让下载模块从 response 获取文件名）
+    let task = PatchDownloadTask {
+        url: patch.url_patch.clone(),
+        dest_path: None, // 从 response 获取文件名
+        patch: patch.clone(),
+        src_file,
+        dst_file,
+    };
+
+    Ok(Some(task))
 }
 
 /// 处理源文件（当 src 和 dst 相同时）
@@ -246,26 +251,32 @@ fn handle_src_after_patch(src_file: &Path, keep_src: bool) -> Result<()> {
 ///
 /// # Arguments
 ///
-/// * `tasks` - 已完成的补丁下载任务列表
+/// * `tasks` - 已完成的补丁下载任务列表（可变引用）
 ///
 /// # Returns
 ///
 /// * `Result<Option<PathBuf>>` - 成功时返回最终补丁后的文件路径
-pub async fn apply_downloaded_patches(tasks: Vec<PatchDownloadTask>) -> Result<Option<PathBuf>> {
+pub async fn apply_downloaded_patches(tasks: &mut [PatchDownloadTask]) -> Result<Option<PathBuf>> {
     if tasks.is_empty() {
         return Ok(None);
     }
 
     let mut current_file: Option<PathBuf> = None;
 
-    for task in tasks {
+    for task in tasks.iter_mut() {
         let src_file = if current_file.is_none() {
-            task.src_file
+            task.src_file.clone()
         } else {
             current_file.clone().unwrap()
         };
 
         log::info!("应用补丁：{}", task.patch.url_patch);
+
+        // 确保 dest_path 已设置
+        let patch_path = task
+            .dest_path
+            .as_ref()
+            .context("补丁文件路径未设置，需要先下载补丁文件")?;
 
         // 检查 src 和 dst 是否相同
         let src_is_dst = src_file == task.dst_file;
@@ -279,19 +290,19 @@ pub async fn apply_downloaded_patches(tasks: Vec<PatchDownloadTask>) -> Result<O
 
         // 应用补丁
         log::info!("正在应用补丁到：{}", task.dst_file.display());
-        bspatch(&task.dest_path, &actual_src, &task.dst_file)
+        bspatch(patch_path, &actual_src, &task.dst_file)
             .await
             .context("应用补丁失败")?;
 
         // 清理补丁文件
-        let _ = std::fs::remove_file(&task.dest_path);
+        let _ = std::fs::remove_file(patch_path);
 
         // 根据 keep_src 处理源文件（如果 src 和 dst 相同则已处理）
         if !src_is_dst {
             handle_src_after_patch(&actual_src, task.patch.keep_src)?;
         }
 
-        current_file = Some(task.dst_file);
+        current_file = Some(task.dst_file.clone());
         log::info!("补丁应用成功：{}", current_file.as_ref().unwrap().display());
     }
 

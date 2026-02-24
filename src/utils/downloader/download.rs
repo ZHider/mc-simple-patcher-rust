@@ -1,7 +1,7 @@
 //! 下载核心逻辑模块
 //! 实现单文件下载的完整流程
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use futures::{AsyncReadExt, StreamExt, TryStreamExt};
@@ -18,9 +18,13 @@ use super::progress::create_progress_bar_single;
 use crate::utils::temp_dir;
 
 /// 下载任务结构
+///
+/// `dest_path` 可以是：
+/// - `Some(path)`: 直接下载到指定路径
+/// - `None`: 从 HTTP 响应的 Content-Disposition 或 URL 中推断文件名，下载到临时目录
 pub struct DownloadTask {
     pub url: String,
-    pub dest_path: std::path::PathBuf,
+    pub dest_path: Option<PathBuf>,
     pub check_sha256: bool,
 }
 
@@ -29,23 +33,24 @@ pub struct DownloadTask {
 /// # Arguments
 ///
 /// * `url` - 下载链接的字符串引用
-/// * `dest_path` - 目标路径的引用
+/// * `dest_path` - 目标路径的引用（如果为 None，则从 response 获取文件名并保存到临时目录）
 /// * `check_sha256` - 是否检查 SHA256 校验和
 /// * `progress_bar` - 可选的进度条
 /// * `stop_if_cannot_check_integrity` - 如果无法检查完整性是否停止
 ///
 /// # Returns
 ///
-/// * `Result<bool>` - 成功时返回布尔值表示是否进行了下载，失败时返回错误
+/// * `Result<(bool, PathBuf)>` - 成功时返回（是否进行了下载，实际文件路径），失败时返回错误
 pub async fn download_file_internal(
     url: &str,
-    dest_path: &Path,
+    dest_path: Option<&Path>,
     check_sha256: bool,
     progress_bar: Option<ProgressBar>,
     stop_if_cannot_check_integrity: bool,
-) -> Result<bool> {
+) -> Result<(bool, PathBuf)> {
     // 检查文件是否已存在且完整
     if check_sha256 {
+        let dest_path = dest_path.context("检查完整性时需要指定目标路径")?;
         match hash_check::check_file_integrity(url, dest_path).await? {
             // 检查成功且文件完整
             Some(true) => {
@@ -56,10 +61,10 @@ pub async fn download_file_internal(
                 } else {
                     log::info!("跳过下载，文件已是最新版本：{}", dest_path.display());
                 }
-                return Ok(false);
+                return Ok((false, dest_path.to_path_buf()));
             }
             // 检查失败，不知道文件是否完整
-            None if stop_if_cannot_check_integrity => return Ok(false),
+            None if stop_if_cannot_check_integrity => return Ok((false, dest_path.to_path_buf())),
             // 其他情况直接继续
             _ => {}
         }
@@ -76,19 +81,26 @@ pub async fn download_file_internal(
     };
 
     // 如果下载的是压缩文件，则进行解压缩
-    if gz_compressed {
+    let final_path = if gz_compressed {
         log::info!("正在解压文件：{}", dest_path_to_use.display());
-        decompress_gz_sync(&dest_path_to_use, dest_path)?;
-        log::info!("已经解压到 {}", dest_path.display());
-    }
+        let final_path = dest_path.unwrap_or(&dest_path_to_use).to_path_buf();
+        decompress_gz_sync(&dest_path_to_use, &final_path)?;
+        log::info!("已经解压到 {}", final_path.display());
+        let _ = std::fs::remove_file(&dest_path_to_use); // 清理 gz 临时文件
+        final_path
+    } else {
+        dest_path_to_use
+    };
 
-    Ok(result)
+    Ok((result, final_path))
 }
 
 /// 确定下载源和目标路径，处理 GZ 压缩文件的情况
+///
+/// 如果 `dest_path` 为 None，则从 response 中获取文件名并保存到临时目录。
 async fn determine_gz_support(
     url: &str,
-    dest_path: &Path,
+    dest_path: Option<&Path>,
 ) -> Result<(reqwest::Response, std::path::PathBuf, bool)> {
     let gz_url = format!("{}.gz", url);
     let client = create_http_client()?;
@@ -98,9 +110,19 @@ async fn determine_gz_support(
         Ok(_) => {
             // GZ 文件存在，使用压缩版本
             log::info!("检测到服务器有{}，正在下载……", gz_url);
-            let dest_path_gz = temp_dir()?
-                .join(dest_path.file_name().context("无法获取文件名！")?)
-                .with_added_extension("gz");
+
+            // 决定目标路径
+            let dest_path_gz = if let Some(dp) = dest_path {
+                // 有指定路径，保存到临时目录的 gz 文件
+                temp_dir()?
+                    .join(dp.file_name().context("无法获取文件名！")?)
+                    .with_added_extension("gz")
+            } else {
+                // 无指定路径，从 response 获取文件名
+                let filename = super::helpers::get_filename_from_response(&gz_response)?;
+                temp_dir()?.join(&filename).with_added_extension("gz")
+            };
+
             Ok((gz_response, dest_path_gz, true))
         }
         Err(e) => {
@@ -112,7 +134,17 @@ async fn determine_gz_support(
                 .send()
                 .await
                 .context(format!("无法发送请求到：{}", url))?;
-            Ok((response, dest_path.to_path_buf(), false))
+
+            // 决定目标路径
+            let dest_path_buf = if let Some(dp) = dest_path {
+                dp.to_path_buf()
+            } else {
+                // 从 response 获取文件名
+                let filename = super::helpers::get_filename_from_response(&response)?;
+                temp_dir()?.join(&filename)
+            };
+
+            Ok((response, dest_path_buf, false))
         }
     }
 }
@@ -120,12 +152,23 @@ async fn determine_gz_support(
 /// 单文件下载（带进度条）
 pub async fn download_file(url: &str, dest_path: &Path, check_sha256: bool) -> Result<bool> {
     let pb = create_progress_bar_single();
-    download_file_internal(url, dest_path, check_sha256, Some(pb), false).await
+    let (downloaded, _) =
+        download_file_internal(url, Some(dest_path), check_sha256, Some(pb), false).await?;
+    Ok(downloaded)
 }
 
-/// 下载补丁文件（单进度条）
-pub async fn download_patch_file(url: &str, dest_path: &Path) -> Result<bool> {
-    download_file(url, dest_path, false).await
+/// 下载补丁文件（无进度条，从 response 获取文件名）
+/// 返回实际下载的补丁文件路径
+pub async fn download_patch_file(url: &str, dest_path: &Path) -> Result<PathBuf> {
+    let (_, path) = download_file_internal(url, Some(dest_path), false, None, false).await?;
+    Ok(path)
+}
+
+/// 下载补丁文件（从 response 获取文件名）
+/// 返回实际下载的补丁文件路径
+pub async fn download_patch_file_auto(url: &str) -> Result<PathBuf> {
+    let (_, path) = download_file_internal(url, None, false, None, false).await?;
+    Ok(path)
 }
 
 /// 带进度条的下载逻辑

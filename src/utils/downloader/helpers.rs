@@ -115,3 +115,51 @@ pub fn support_download_range(resp: &Response) -> Result<Option<String>> {
         Ok(None)
     }
 }
+
+/// 从 HTTP 响应中获取文件名
+///
+/// 优先从 Content-Disposition 头部提取 filename，如果不存在则从 URL 提取。
+///
+/// # Arguments
+///
+/// * `resp` - HTTP 响应的引用
+///
+/// # Returns
+///
+/// * `Result<String>` - 成功时返回文件名，失败时返回错误
+pub fn get_filename_from_response(resp: &Response) -> Result<String> {
+    // 尝试从 Content-Disposition 头部获取文件名
+    if let Some(content_disposition) = resp.headers().get("Content-Disposition") {
+        let cd_str = content_disposition
+            .to_str()
+            .context(format!("HTTP 头读取时解码失败：{:?}", content_disposition))?;
+
+        // 解析 filename="..." 或 filename=...
+        if let Some(filename_start) = cd_str.find("filename=") {
+            let filename_part = &cd_str[filename_start + 9..];
+            let filename = if filename_part.starts_with('"') {
+                // filename="..." 格式
+                filename_part.split('"').nth(1).unwrap_or("").to_string()
+            } else {
+                // filename=... 格式（无引号）
+                filename_part
+                    .split(';')
+                    .next()
+                    .unwrap_or("")
+                    .trim()
+                    .to_string()
+            };
+
+            if !filename.is_empty() {
+                return Ok(filename);
+            }
+        }
+    }
+
+    // 从 URL 提取文件名
+    resp.url()
+        .path_segments()
+        .and_then(|mut segments| segments.next_back())
+        .map(|s| s.to_string())
+        .context(format!("无法从 URL 中提取文件名：{}", resp.url()))
+}

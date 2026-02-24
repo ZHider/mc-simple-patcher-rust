@@ -200,22 +200,20 @@ fn process_matched_file(
             .to_string();
 
         // 收集补丁下载任务
-        if let Some(tasks) = crate::utils::downloader::bspatch::collect_patch_tasks(
+        if let Some(task) = crate::utils::downloader::bspatch::match_patch_tasks(
             &file_rule.patches,
             work_dir,
             matched_file,
             &target_file_name,
         )? {
             // 将补丁任务转换为 DownloadTask 并添加到下载列表
-            for task in &tasks {
-                files_to_download.push(DownloadTask {
-                    url: task.url.clone(),
-                    dest_path: task.dest_path.clone(),
-                    check_sha256: false,
-                });
-            }
+            files_to_download.push(DownloadTask {
+                url: task.url.clone(),
+                dest_path: task.dest_path.clone(),
+                check_sha256: false,
+            });
             // 保存补丁任务以便后续应用
-            patch_tasks.extend(tasks);
+            patch_tasks.push(task);
         }
     }
 
@@ -244,7 +242,7 @@ async fn process_unmatched_file(
 ///
 /// # Arguments
 ///
-/// * `patch_tasks` - 补丁任务列表
+/// * `patch_tasks` - 补丁任务列表（可变引用，用于更新下载后的路径）
 /// * `group` - 组配置
 /// * `work_dir` - 工作目录
 /// * `files_left_from_existing` - 剩余文件集合
@@ -253,13 +251,22 @@ async fn process_unmatched_file(
 ///
 /// * `Result<()>` - 成功时返回空值，失败时返回错误
 async fn apply_patches_and_handle_result(
-    patch_tasks: Vec<crate::utils::downloader::bspatch::PatchDownloadTask>,
+    patch_tasks: &mut [crate::utils::downloader::bspatch::PatchDownloadTask],
     group: &GroupConfig,
     work_dir: &Path,
     files_left_from_existing: &mut Option<HashSet<PathBuf>>,
 ) -> Result<()> {
     if patch_tasks.is_empty() {
         return Ok(());
+    }
+
+    // 下载补丁文件（如果 dest_path 为 None）
+    for task in patch_tasks.iter_mut() {
+        if task.dest_path.is_none() {
+            log::info!("正在下载补丁：{}", task.url);
+            let patch_path = crate::utils::downloader::download_patch_file_auto(&task.url).await?;
+            task.dest_path = Some(patch_path);
+        }
     }
 
     match crate::utils::downloader::bspatch::apply_downloaded_patches(patch_tasks).await {
@@ -328,7 +335,7 @@ async fn sync_files(
     // 收集所有下载任务
     let SyncResult {
         files_to_download,
-        patch_tasks,
+        mut patch_tasks,
     } = collect_download_tasks(
         existing_files,
         group,
@@ -346,7 +353,7 @@ async fn sync_files(
     }
 
     // 应用已下载的补丁
-    apply_patches_and_handle_result(patch_tasks, group, work_dir, files_left_from_existing).await?;
+    apply_patches_and_handle_result(&mut patch_tasks, group, work_dir, files_left_from_existing).await?;
 
     Ok(())
 }
@@ -441,7 +448,7 @@ async fn build_file_downloadinfo(
         // 下载文件
         Ok(Some(DownloadTask {
             url: file_rule.url.clone(),
-            dest_path,
+            dest_path: Some(dest_path),
             check_sha256: file_rule.sha256.is_some(), // 如果配置中有 SHA256，则启用校验
         }))
     }
