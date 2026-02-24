@@ -9,15 +9,15 @@ self_update_url = "http://example.com/mc_simple_patcher.exe"
 # <必须> 版本号，目前仅作为标识作用
 version = 0
 
-# [可选] 整个network键都是可选的
+# [可选] 整个 network 键都是可选的
 [network]
-# 是否强制切换到 HTTP/3 quic，只走UDP协议，默认为false
+# 是否强制切换到 HTTP/3 quic，只走 UDP 协议，默认为 false
 quic = false
-# 是否忽略证书错误，默认为false
+# 是否忽略证书错误，默认为 false
 ignore_invalid_cert = true
-# 下载超时时间，默认15秒
+# 下载超时时间，默认 15 秒
 timeout = 10
-# 下载遇到错误时重试次数，默认3次
+# 下载遇到错误时重试次数，默认 3 次
 retry = 5
 
 # 以下都是必须项目。
@@ -47,7 +47,7 @@ delete = false
 pattern = '^.+\.jar$'
 
 # 每一个文件规则如果有多个规则，关系为和（AND）
-# 对于每一个files项，url键是必须的
+# 对于每一个 files 项，url 键是必须的
 [[groups.files]]
 # 如果有 name 字段，则优先使用文件名进行完全匹配
 name = "OreExcavation.jar"
@@ -55,7 +55,7 @@ url = "https://example.com/files/OreExcavation.jar"
 
 [[groups.files]]
 # 如果有 mod_id 字段，则使用 mod_id 和 mod_version 进行匹配
-# 若使用此种定义方式，mod_id为必需字段，mod_version为可选字段 
+# 若使用此种定义方式，mod_id 为必需字段，mod_version 为可选字段
 mod_id = "immersiveengineering"
 mod_version = "1.18.2-8.4.0-161"
 url = "https://example.com/files/immersiveengineering-1.18.2-8.4.0-161.jar"
@@ -67,7 +67,7 @@ url = "https://example.com/files/lucky_hat-1.0.2.jar"
 
 [[groups.files]]
 # 如果有 sha256 字段，则使用 sha256 进行匹配
-# 对于远程 metadata（也就是toml）文件，如果服务器存在 filename.sha256 文件，则会检测 sha256 是否一致。
+# 对于远程 metadata（也就是 toml）文件，如果服务器存在 filename.sha256 文件，则会检测 sha256 是否一致。
 # 如 http://example.com/metadata.toml.sha256
 # 如果你的服务器支持，也可以通过设置自定义 HTTP Response Header：`x-checksum-sha256` 和 `x-sha256`
 
@@ -82,10 +82,12 @@ url = "https://example.com/files/tac-0.3.10.1-1.18.2.jar"
 sha256 = "24232e4500aa3385923ad3947bec8443dc4f04c9cf17c2f94521dcfcd3a1bc20"
 url = "https://example.com/files/tac-0.3.10.1-1.18.2.jar"
 
+# patches 是可选的
 [[groups.files.patches]]
-# BSDIFF4-format 补丁URL路径
+# BSDIFF4-format 补丁 URL 路径
 url_patch = "https://example.com/files/tac-0.3.10.1-1.18.2.jar.v1.patch"
-# 将从现存文件、.disabled文件、.backup文件中搜索
-sha256_src = "SHA256"
-# 补丁成功后，是否删除被补丁的文件。如果不删除，则其将被重命名为 <filename>.backup
+# 源文件的 SHA256 哈希值（64 字符十六进制字符串）
+sha256_src = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+# 补丁成功后，是否保留源文件。默认为 true
+# 如果保留，则其将被重命名为 <filename>.backup
 keep_src = true

@@ -358,6 +358,7 @@ fn create_file_rule(rule: &GenerateRule, file_path: &Path) -> Result<crate::conf
         name_pattern: None,
         url,
         sha256,
+        patches: Vec::new(),
     };
 
     // 如果需要，提取 mod_id 和 mod_version

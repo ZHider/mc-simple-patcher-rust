@@ -13,6 +13,22 @@ pub struct MetadataConfig {
     pub version: Option<u32>,
 }
 
+/// 文件补丁配置
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct FilePatch {
+    /// 补丁文件下载 URL
+    pub url_patch: String,
+    /// 源文件的 SHA256 哈希值（64 字符十六进制字符串）
+    pub sha256_src: String,
+    /// 补丁成功后是否保留源文件（重命名为 .backup），默认为 true
+    #[serde(default = "default_keep_src")]
+    pub keep_src: bool,
+}
+
+fn default_keep_src() -> bool {
+    true
+}
+
 /// 文件匹配规则
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct FileRule {
@@ -22,6 +38,8 @@ pub struct FileRule {
     pub name_pattern: Option<String>,
     pub url: String,
     pub sha256: Option<String>,
+    #[serde(default)]
+    pub patches: Vec<FilePatch>,
 }
 
 /// 组配置
@@ -142,6 +160,22 @@ fn validate_config(config: &Config) -> Result<()> {
                     "File rule must have at least one match condition (name, mod_id, name_pattern, or sha256)"
                 );
             }
+
+            // 验证 patches 数组
+            for patch in &file_rule.patches {
+                if patch.url_patch.is_empty() {
+                    anyhow::bail!("url_patch cannot be empty in patch rule");
+                }
+                if !patch.url_patch.starts_with("http://") && !patch.url_patch.starts_with("https://") {
+                    anyhow::bail!("url_patch must be a valid HTTP or HTTPS URL");
+                }
+                if patch.sha256_src.is_empty() {
+                    anyhow::bail!("sha256_src cannot be empty in patch rule");
+                }
+                if patch.sha256_src.len() != 64 || !patch.sha256_src.chars().all(|c| c.is_ascii_hexdigit()) {
+                    anyhow::bail!("sha256_src must be a valid 64-character hex string");
+                }
+            }
         }
 
         // 如果定义了 pattern 字段，检查其是否为有效的正则表达式
@@ -184,6 +218,9 @@ mod tests {
     fn test_parse_example_config() {
         // 测试解析示例配置文件
         let config = parse_config("example.toml");
+        if let Err(e) = &config {
+            eprintln!("解析 example.toml 失败：{}", e);
+        }
         assert!(config.is_ok());
     }
 
@@ -211,6 +248,7 @@ mod tests {
                     name_pattern: None,
                     url: "https://example.com/test.jar".to_string(),
                     sha256: None,
+                    patches: Vec::new(),
                 }],
             }],
         };
