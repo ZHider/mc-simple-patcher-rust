@@ -1,6 +1,7 @@
 mod hash_check;
 mod helpers;
 mod progress;
+pub mod bspatch;
 pub mod self_update;
 
 use anyhow::{Context, Result};
