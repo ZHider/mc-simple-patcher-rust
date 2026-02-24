@@ -2,12 +2,24 @@
 # 但即使无法更新，也会执行之后的补丁流程
 metadata = "http://example.com/metadata.toml"
 
-# [可选] 自更新地址，如果指定，程序启动时会检查 <URL>.sha256
-# 如果 sha256 和自身不同则更新自身
-self_update_url = "http://example.com/mc_simple_patcher.exe"
-
 # <必须> 版本号，目前仅作为标识作用
-version = 0
+version = 1
+
+# [可选] 自更新相关选项
+[self_update]
+# 自更新地址，如果指定，程序启动时会检查 <URL>.sha256
+# 如果 sha256 和自身不同则开始更新自身
+url = "http://example.com/mc_simple_patcher.exe"
+
+# [可选] 使用补丁方式自更新
+[[self_update.patches]]
+# <必须> BSDIFF4-format 补丁 URL 路径
+url_patch = "https://example.com/mc_simple_patcher.exe.v0.2.5.patch"
+# <必须> 源文件的 SHA256 哈希值（64 字符十六进制字符串）
+sha256_src = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+# [可选] 补丁后是否保留源文件。默认为 true
+# 如果保留，则其将被重命名为 <filename>.backup
+keep_src = true
 
 # [可选] 整个 network 键都是可选的
 [network]
@@ -20,7 +32,7 @@ timeout = 10
 # 下载遇到错误时重试次数，默认 3 次
 retry = 5
 
-# 以下都是必须项目。
+# 以下都是 <必须> 项目。
 [[groups]]
 
 # 锚点文件/文件夹，用于定位工作目录
@@ -82,7 +94,7 @@ url = "https://example.com/files/tac-0.3.10.1-1.18.2.jar"
 sha256 = "24232e4500aa3385923ad3947bec8443dc4f04c9cf17c2f94521dcfcd3a1bc20"
 url = "https://example.com/files/tac-0.3.10.1-1.18.2.jar"
 
-# patches 是可选的
+# [可选] 使用补丁方式更新文件
 [[groups.files.patches]]
 # BSDIFF4-format 补丁 URL 路径
 url_patch = "https://example.com/files/tac-0.3.10.1-1.18.2.jar.v1.patch"

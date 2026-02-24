@@ -48,9 +48,12 @@ pub async fn download_file_internal(
     progress_bar: Option<ProgressBar>,
     stop_if_cannot_check_integrity: bool,
 ) -> Result<(bool, PathBuf)> {
+    log::debug!("开始下载：url={}, dest_path={:?}", url, dest_path);
+
     // 检查文件是否已存在且完整
     if check_sha256 {
         let dest_path = dest_path.context("检查完整性时需要指定目标路径")?;
+        log::trace!("检查文件完整性：{:?}", dest_path);
         match hash_check::check_file_integrity(url, dest_path).await? {
             // 检查成功且文件完整
             Some(true) => {
@@ -64,19 +67,27 @@ pub async fn download_file_internal(
                 return Ok((false, dest_path.to_path_buf()));
             }
             // 检查失败，不知道文件是否完整
-            None if stop_if_cannot_check_integrity => return Ok((false, dest_path.to_path_buf())),
+            None if stop_if_cannot_check_integrity => {
+                log::debug!("无法检查完整性，根据参数停止下载");
+                return Ok((false, dest_path.to_path_buf()));
+            }
             // 其他情况直接继续
-            _ => {}
+            _ => {
+                log::debug!("文件不完整或不存在，继续下载");
+            }
         }
     }
 
+    log::trace!("开始确定下载源和目标路径");
     let (response, dest_path_to_use, gz_compressed) = determine_gz_support(url, dest_path).await?;
 
     let result = if let Some(pb) = progress_bar {
         // 带进度条的下载
+        log::trace!("使用进度条下载");
         download_with_progress(response, &dest_path_to_use, pb).await?
     } else {
         // 不带进度条的简单下载
+        log::trace!("无进度条下载");
         download_without_progress(response, &dest_path_to_use).await?
     };
 
@@ -87,11 +98,13 @@ pub async fn download_file_internal(
         decompress_gz_sync(&dest_path_to_use, &final_path)?;
         log::info!("已经解压到 {}", final_path.display());
         let _ = std::fs::remove_file(&dest_path_to_use); // 清理 gz 临时文件
+        log::trace!("已清理临时 gz 文件");
         final_path
     } else {
         dest_path_to_use
     };
 
+    log::debug!("下载完成：final_path={:?}", final_path);
     Ok((result, final_path))
 }
 
@@ -103,6 +116,8 @@ async fn determine_gz_support(
     dest_path: Option<&Path>,
 ) -> Result<(reqwest::Response, std::path::PathBuf, bool)> {
     let gz_url = format!("{}.gz", url);
+    log::trace!("检查 GZ 版本：{}", gz_url);
+
     let client = create_http_client()?;
     let gz_response = build_request(client.get(&gz_url)).send().await?;
 
@@ -114,13 +129,17 @@ async fn determine_gz_support(
             // 决定目标路径
             let dest_path_gz = if let Some(dp) = dest_path {
                 // 有指定路径，保存到临时目录的 gz 文件
-                temp_dir()?
+                let path = temp_dir()?
                     .join(dp.file_name().context("无法获取文件名！")?)
-                    .with_added_extension("gz")
+                    .with_added_extension("gz");
+                log::trace!("使用指定路径的 gz 临时文件：{:?}", path);
+                path
             } else {
                 // 无指定路径，从 response 获取文件名
                 let filename = super::helpers::get_filename_from_response(&gz_response)?;
-                temp_dir()?.join(&filename).with_added_extension("gz")
+                let path = temp_dir()?.join(&filename).with_added_extension("gz");
+                log::trace!("从 response 获取文件名的 gz 临时文件：{:?}", path);
+                path
             };
 
             Ok((gz_response, dest_path_gz, true))
@@ -128,8 +147,10 @@ async fn determine_gz_support(
         Err(e) => {
             // GZ 文件不存在，使用原始 URL
             log::debug!("未找到 gz 压缩包：{}", gz_url);
-            log::trace!("ERROR: {}", e);
+            log::trace!("GZ 检查错误：{}", e);
+
             let client = create_http_client()?;
+            log::trace!("发送请求到：{}", url);
             let response = build_request(client.get(url))
                 .send()
                 .await
@@ -137,11 +158,14 @@ async fn determine_gz_support(
 
             // 决定目标路径
             let dest_path_buf = if let Some(dp) = dest_path {
+                log::trace!("使用指定路径：{:?}", dp);
                 dp.to_path_buf()
             } else {
                 // 从 response 获取文件名
                 let filename = super::helpers::get_filename_from_response(&response)?;
-                temp_dir()?.join(&filename)
+                let path = temp_dir()?.join(&filename);
+                log::trace!("从 response 获取文件名：{:?}", path);
+                path
             };
 
             Ok((response, dest_path_buf, false))
@@ -155,13 +179,6 @@ pub async fn download_file(url: &str, dest_path: &Path, check_sha256: bool) -> R
     let (downloaded, _) =
         download_file_internal(url, Some(dest_path), check_sha256, Some(pb), false).await?;
     Ok(downloaded)
-}
-
-/// 下载补丁文件（无进度条，从 response 获取文件名）
-/// 返回实际下载的补丁文件路径
-pub async fn download_patch_file(url: &str, dest_path: &Path) -> Result<PathBuf> {
-    let (_, path) = download_file_internal(url, Some(dest_path), false, None, false).await?;
-    Ok(path)
 }
 
 /// 下载补丁文件（从 response 获取文件名）
@@ -178,11 +195,15 @@ async fn download_with_progress(
     pb: ProgressBar,
 ) -> Result<bool> {
     let total_size = get_file_length(&response)?;
+    log::trace!("下载总大小：{} bytes", total_size);
     pb.set_length(total_size);
 
+    log::trace!("创建目标文件：{:?}", dest_path);
     let mut dest_file = create_destination_file(dest_path).await?;
     let (tx, updater_handle) = setup_progress_update_task(&pb, dest_path, &response).await?;
+    log::trace!("开始带重试的下载");
     download_with_retries(response, total_size, &mut dest_file, &tx).await?;
+    log::trace!("下载完成，清理资源");
     finalize_download(&mut dest_file, tx, updater_handle).await?;
 
     Ok(true)
@@ -190,23 +211,31 @@ async fn download_with_progress(
 
 /// 不带进度条的下载逻辑
 async fn download_without_progress(response: reqwest::Response, dest_path: &Path) -> Result<bool> {
+    log::trace!("创建目标文件（无进度条）：{:?}", dest_path);
     let mut dest_file = tokio::fs::File::create(dest_path)
         .await
         .with_context(|| format!("无法创建目标文件：{:?}", dest_path))?;
 
     let mut stream = response.bytes_stream();
+    let mut total_bytes: u64 = 0;
 
     while let Some(chunk_result) = stream.next().await {
         let chunk = chunk_result.context("无法读取数据块")?;
+        total_bytes += chunk.len() as u64;
         dest_file.write_all(&chunk).await.context("无法写入文件")?;
     }
 
-    log::info!("下载完成：{}", dest_path.display());
+    log::debug!(
+        "下载完成：{}, 总字节数：{}",
+        dest_path.display(),
+        total_bytes
+    );
     Ok(true)
 }
 
 /// 创建目标文件
 async fn create_destination_file(dest_path: &Path) -> Result<tokio::fs::File> {
+    log::trace!("创建文件：{:?}", dest_path);
     tokio::fs::File::create(dest_path)
         .await
         .with_context(|| format!("无法创建目标文件：{:?}", dest_path))
@@ -222,12 +251,14 @@ async fn setup_progress_update_task(
     use crate::utils::get_filename;
 
     let total_size = get_file_length(response)?;
+    log::trace!("设置进度更新：total_size={} bytes", total_size);
     let (tx, rx) = tokio::sync::mpsc::channel::<u64>(128);
 
     let pb_updater = pb.clone();
     let full_name_updater = get_filename(dest_path)?;
     let prefix_updater = extract_prefix_from_pb(pb);
 
+    log::trace!("启动进度更新任务：file={}", full_name_updater);
     let updater_handle = spawn_progress_updater(
         pb_updater,
         full_name_updater.as_ref(),
@@ -289,12 +320,20 @@ async fn download_with_retries(
     let retry_max = get_global_config().network.retry;
     let url = response.url().to_string();
     let range_type = support_download_range(&response)?;
+
+    log::trace!(
+        "开始下载：url={}, total_size={}, retry_max={}",
+        url,
+        total_size,
+        retry_max
+    );
     let mut value = download_with_progress_updates(dest_file, response, tx).await;
     let mut i = 0;
 
     let _: () = while let Err(e) = value {
         log::error!("{e}");
         if i >= retry_max {
+            log::error!("用尽重试次数 ({} 次)，下载失败", retry_max);
             anyhow::bail!("用尽重试次数，下载失败！");
         }
 
@@ -303,16 +342,20 @@ async fn download_with_retries(
 
         dest_file.flush().await?;
         let cur_length = dest_file.stream_position().await?;
+        log::debug!("当前已下载 {} bytes，准备断点续传", cur_length);
 
         let client = create_http_client()?;
         let response = if let Some(ref rt) = range_type {
+            log::trace!("使用 Range 请求：{}={}-{}", rt, cur_length, total_size);
             url_get_range(&url, rt, cur_length, total_size).await?
         } else {
+            log::trace!("服务器不支持 Range，重新从头下载");
             build_request(client.get(&url)).send().await?
         };
 
         value = download_with_progress_updates(dest_file, response, tx).await;
     };
+    log::trace!("下载成功完成");
     Ok(())
 }
 

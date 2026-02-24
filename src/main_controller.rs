@@ -52,9 +52,16 @@ pub async fn execute_patch(config: Arc<Config>) -> Result<()> {
 /// * `Result<()>` - 成功时返回空值，失败时返回错误
 async fn process_group(group: &GroupConfig) -> Result<()> {
     log::info!("处理组：anchor={}", group.anchor);
-    log::debug!("组配置：{:?}", group);
+    log::debug!(
+        "组配置详情：mirror={}, delete={}, recursive={}, pattern={:?}",
+        group.mirror,
+        group.delete,
+        group.recursive,
+        group.pattern
+    );
 
     // 查找锚点
+    log::trace!("开始查找锚点：{}", group.anchor);
     let Some(ref anchor_dir) = anchor_finder::find_anchor_optimized(
         &group.anchor,
         &std::env::current_dir()?,
@@ -69,8 +76,10 @@ async fn process_group(group: &GroupConfig) -> Result<()> {
     // 计算工作目录
     let work_dir = anchor_dir.join(&group.root);
     log::info!("工作目录：{}", work_dir.display());
+    log::trace!("工作目录完整路径：{:?}", work_dir);
 
     // 获取符合这个组规则的所有现有文件
+    log::trace!("编译正则表达式：{:?}", group.pattern);
     let pattern = group
         .pattern
         .as_deref()
@@ -78,23 +87,27 @@ async fn process_group(group: &GroupConfig) -> Result<()> {
             Regex::new(pattern_str).context(format!("无效的正则表达式：{}", pattern_str))
         })
         .transpose()?;
+
+    log::trace!("扫描目录：{:?}, recursive={}", work_dir, group.recursive);
     let existing_files =
         file_manager::get_files_in_dir(&work_dir, group.recursive, pattern.as_ref())?;
     log::debug!("找到 {} 个现有文件", existing_files.len());
 
     log::info!("开始提取现有文件信息……");
+    log::trace!("开始构建 MOD 信息缓存");
     let modinfo_cache = file_manager::modinfo_cache::extract_modinfo(
         existing_files.par_iter(),
         Some(existing_files.len()),
     )
     .context("构建 MOD 信息缓存时出错……这个真的是实际存在的错误吗？")?;
+    log::debug!("MOD 信息缓存构建完成");
 
     // 处理镜像模式
     let mut processd_file = if group.mirror {
         log::debug!("启用镜像模式，将构建剩余文件列表缓存……");
-        // execute_mirror_mode(&existing_files, group, &modinfo_cache).await?;
         Some(HashSet::<PathBuf>::new())
     } else {
+        log::trace!("镜像模式未启用");
         None
     };
     // 处理文件同步
@@ -140,13 +153,18 @@ where
     I: Iterator,
     I::Item: AsRef<Path>,
 {
-    log::info!("处理镜像模式……");
+    log::info!("处理镜像模式，delete={}", group.delete);
 
+    let mut count = 0;
     for file in files {
         let file = file.as_ref();
+        log::trace!("处理镜像文件：{:?}", file);
+        count += 1;
+
         // 文件不在配置中，需要处理
         if group.delete {
             // 删除文件
+            log::debug!("删除文件：{}", file.display());
             std::fs::remove_file(file).context(format!("无法删除文件：{:?}", file))?;
             log::info!("已删除文件：{}", file.display());
         } else {
@@ -155,11 +173,17 @@ where
                 "{}.disabled",
                 file.extension().unwrap_or_default().to_string_lossy()
             ));
+            log::debug!(
+                "禁用文件：{} -> {}",
+                file.display(),
+                disabled_path.display()
+            );
             std::fs::rename(file, &disabled_path).context(format!("无法重命名文件：{:?}", file))?;
             log::info!("已禁用文件：{}", disabled_path.display());
         }
     }
 
+    log::debug!("镜像模式处理完成，共处理 {} 个文件", count);
     Ok(())
 }
 
@@ -190,22 +214,35 @@ fn process_matched_file(
     patch_tasks: &mut Vec<crate::utils::downloader::bspatch::PatchDownloadTask>,
 ) -> Result<()> {
     log::info!("找到匹配的文件：{}", matched_file.display());
+    log::trace!(
+        "文件规则：url={}, patches_count={}",
+        file_rule.url,
+        file_rule.patches.len()
+    );
 
     // 检查是否需要应用补丁
     if !file_rule.patches.is_empty() {
+        log::debug!(
+            "检测到 {} 个补丁配置，准备检查补丁",
+            file_rule.patches.len()
+        );
+
         let target_file_name = Path::new(&file_rule.url)
             .file_name()
             .context("无法从 URL 提取文件名")?
             .to_string_lossy()
             .to_string();
+        log::trace!("目标文件名：{}", target_file_name);
 
         // 收集补丁下载任务
+        log::trace!("调用 match_patch_tasks");
         if let Some(task) = crate::utils::downloader::bspatch::match_patch_tasks(
             &file_rule.patches,
             work_dir,
             matched_file,
             &target_file_name,
         )? {
+            log::debug!("补丁任务创建成功，url={}", task.url);
             // 将补丁任务转换为 DownloadTask 并添加到下载列表
             files_to_download.push(DownloadTask {
                 url: task.url.clone(),
@@ -214,6 +251,9 @@ fn process_matched_file(
             });
             // 保存补丁任务以便后续应用
             patch_tasks.push(task);
+            log::trace!("补丁任务已添加到列表");
+        } else {
+            log::debug!("未找到匹配的补丁，将下载完整文件");
         }
     }
 
@@ -234,7 +274,7 @@ async fn process_unmatched_file(
     file_rule: &crate::config::FileRule,
     work_dir: &Path,
 ) -> Result<Option<DownloadTask>> {
-    log::debug!("未找到匹配的文件……");
+    log::debug!("未找到匹配的文件，准备下载：url={}", file_rule.url);
     build_file_downloadinfo(work_dir, file_rule).await
 }
 
@@ -256,23 +296,32 @@ async fn apply_patches_and_handle_result(
     work_dir: &Path,
     files_left_from_existing: &mut Option<HashSet<PathBuf>>,
 ) -> Result<()> {
+    log::debug!("开始应用补丁，任务数：{}", patch_tasks.len());
+
     if patch_tasks.is_empty() {
+        log::trace!("补丁任务列表为空，跳过");
         return Ok(());
     }
 
     // 下载补丁文件（如果 dest_path 为 None）
+    log::trace!("检查补丁文件下载状态");
     for task in patch_tasks.iter_mut() {
         if task.dest_path.is_none() {
             log::info!("正在下载补丁：{}", task.url);
             let patch_path = crate::utils::downloader::download_patch_file_auto(&task.url).await?;
+            log::debug!("补丁下载完成：{:?}", patch_path);
             task.dest_path = Some(patch_path);
+        } else {
+            log::trace!("补丁文件已下载：{:?}", task.dest_path);
         }
     }
 
+    log::debug!("开始应用补丁");
     match crate::utils::downloader::bspatch::apply_downloaded_patches(patch_tasks).await {
         Ok(Some(new_path)) => {
             log::info!("补丁应用成功：{}", new_path.display());
             if let Some(set) = files_left_from_existing {
+                log::trace!("更新已处理文件集合");
                 set.insert(new_path.clone());
             }
         }
@@ -331,8 +380,10 @@ async fn sync_files(
     files_left_from_existing: &mut Option<HashSet<PathBuf>>,
 ) -> Result<()> {
     log::info!("正准备同步 {} 个文件……", group.files.len());
+    log::debug!("工作目录：{:?}", work_dir);
 
     // 收集所有下载任务
+    log::trace!("开始收集下载任务");
     let SyncResult {
         files_to_download,
         mut patch_tasks,
@@ -345,16 +396,31 @@ async fn sync_files(
     )
     .await?;
 
+    log::debug!(
+        "收集完成：{} 个下载任务，{} 个补丁任务",
+        files_to_download.len(),
+        patch_tasks.len()
+    );
+
     // 统一下载所有文件（包括补丁文件）
     if !files_to_download.is_empty() {
+        log::info!("开始下载 {} 个文件", files_to_download.len());
         download_files_with_progress(files_to_download.into_iter())
             .await
             .context("批量下载文件时出错……")?;
+        log::debug!("文件下载完成");
+    } else {
+        log::trace!("无需下载文件");
     }
 
     // 应用已下载的补丁
-    apply_patches_and_handle_result(&mut patch_tasks, group, work_dir, files_left_from_existing).await?;
+    if !patch_tasks.is_empty() {
+        log::info!("开始应用 {} 个补丁", patch_tasks.len());
+    }
+    apply_patches_and_handle_result(&mut patch_tasks, group, work_dir, files_left_from_existing)
+        .await?;
 
+    log::debug!("文件同步完成");
     Ok(())
 }
 
@@ -378,18 +444,22 @@ async fn collect_download_tasks(
     modinfo_cache: &ModInfoCache,
     files_left_from_existing: &mut Option<HashSet<PathBuf>>,
 ) -> Result<SyncResult> {
+    log::debug!("开始收集下载任务，共 {} 个文件规则", group.files.len());
+
     let mut files_to_download = Vec::new();
     let mut patch_tasks = Vec::new();
 
     for (index, file_rule) in group.files.iter().enumerate() {
-        log::debug!("处理第 {} 个文件规则", index + 1);
+        log::trace!("处理第 {} 个文件规则，url={}", index + 1, file_rule.url);
 
         // 检查是否有匹配的活动文件
+        log::trace!("在 {} 个现有文件中查找匹配", existing_files.len());
         let matched_file = existing_files.iter().find(|file_path| {
             file_manager::matches_rule(file_path, file_rule, modinfo_cache).unwrap_or(false)
         });
 
         if let Some(file_path) = matched_file {
+            log::debug!("第 {} 个规则匹配到文件：{}", index + 1, file_path.display());
             // 处理匹配的文件
             process_matched_file(
                 file_rule,
@@ -407,13 +477,21 @@ async fn collect_download_tasks(
                 set.insert(file_path.clone());
             }
         } else {
+            log::debug!("第 {} 个规则未找到匹配文件，准备下载", index + 1);
             // 处理未匹配的文件
             if let Some(task) = process_unmatched_file(file_rule, work_dir).await? {
+                let url = task.url.clone();
                 files_to_download.push(task);
+                log::trace!("添加下载任务：{}", url);
             }
         }
     }
 
+    log::debug!(
+        "下载任务收集完成：{} 个文件，{} 个补丁",
+        files_to_download.len(),
+        patch_tasks.len()
+    );
     Ok(SyncResult {
         files_to_download,
         patch_tasks,

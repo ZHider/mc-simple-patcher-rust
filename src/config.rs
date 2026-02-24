@@ -13,6 +13,28 @@ pub struct MetadataConfig {
     pub version: Option<u32>,
 }
 
+/// 自更新补丁配置
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct SelfUpdatePatch {
+    /// 补丁文件下载 URL
+    pub url_patch: String,
+    /// 源文件的 SHA256 哈希值（64 字符十六进制字符串）
+    pub sha256_src: String,
+    /// 补丁成功后是否保留源文件（重命名为 .backup），默认为 true
+    #[serde(default = "default_keep_src")]
+    pub keep_src: bool,
+}
+
+/// 自更新配置
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
+pub struct SelfUpdateConfig {
+    /// 自更新文件下载 URL
+    pub url: Option<String>,
+    /// 自更新补丁配置
+    #[serde(default)]
+    pub patches: Vec<SelfUpdatePatch>,
+}
+
 /// 文件补丁配置
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct FilePatch {
@@ -91,7 +113,8 @@ pub struct Config {
     pub metadata_config: MetadataConfig,
     #[serde(default)]
     pub network: NetworkConfig,
-    pub self_update_url: Option<String>,
+    #[serde(default)]
+    pub self_update: SelfUpdateConfig,
     pub groups: Vec<GroupConfig>,
 }
 
@@ -129,11 +152,21 @@ fn validate_config(config: &Config) -> Result<()> {
         log::warn!("已经关闭证书验证，您的通讯可能更容易遭受 MITM 攻击！");
     }
 
-    // 验证 self_update_url（如果存在）
-    if let Some(update_url) = &config.self_update_url
+    // 验证 self_update 配置（如果存在）
+    if let Some(update_url) = &config.self_update.url
         && (!update_url.starts_with("http://") && !update_url.starts_with("https://"))
     {
-        anyhow::bail!("self_update_url must be a valid HTTP or HTTPS URL");
+        anyhow::bail!("self_update.url must be a valid HTTP or HTTPS URL");
+    }
+
+    // 验证 self_update.patches
+    for patch in &config.self_update.patches {
+        if patch.url_patch.is_empty() {
+            anyhow::bail!("url_patch cannot be empty in self_update patch");
+        }
+        if patch.sha256_src.len() != 64 {
+            anyhow::bail!("sha256_src must be a 64-character hex string in self_update patch");
+        }
     }
 
     for group in &config.groups {
@@ -237,7 +270,7 @@ mod tests {
                 version: Some(1),
             },
             network: NetworkConfig::default(),
-            self_update_url: None,
+            self_update: SelfUpdateConfig::default(),
             groups: vec![GroupConfig {
                 anchor: "mods".to_string(),
                 root: "./mods".to_string(),

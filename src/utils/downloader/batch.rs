@@ -28,7 +28,11 @@ where
     let total_opt: Option<usize> = upper.or(Some(lower));
     let total_for_log = total_opt.unwrap_or(0);
 
-    log::info!("开始下载 {} 个文件", total_for_log);
+    log::info!(
+        "开始下载 {} 个文件，并发数：{}",
+        total_for_log,
+        total_opt.unwrap_or(6).min(6)
+    );
 
     let multi_progress = setup_multi_progress();
 
@@ -38,9 +42,11 @@ where
         None => 6,
     };
 
+    log::debug!("创建下载任务流，concurrency={}", concurrency);
     let task_stream = futures::stream::iter(tasks_iter.enumerate().map(move |(idx, task)| {
         let total_copy = total_opt;
         let multi_progress = multi_progress.clone();
+        let url = task.url.clone();
 
         async move {
             // 先创建进度条（使用 URL 或 dest_path 的文件名作为占位符）
@@ -58,6 +64,12 @@ where
                     .to_string()
             };
 
+            log::trace!(
+                "开始下载任务 [{}/{}]: {}",
+                idx + 1,
+                total_copy.unwrap_or(0),
+                filename
+            );
             let progress_bar =
                 create_progress_bar(&multi_progress, None, idx, total_copy, &filename);
 
@@ -71,15 +83,17 @@ where
             )
             .await?;
 
-            log::debug!("下载完成：{}", actual_path.display());
+            log::debug!("下载完成 [{}]: {}", url, actual_path.display());
             Ok(())
         }
     }));
 
+    log::trace!("开始执行并发下载流");
     task_stream
         .buffer_unordered(concurrency)
         .for_each(|res| async move {
             if let Err(e) = res {
+                log::debug!("下载任务出错：{}", e);
                 print_error_chain(&e);
             }
         })
