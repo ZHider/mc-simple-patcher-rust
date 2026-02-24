@@ -36,11 +36,13 @@ static GLOBAL_PROGRESS: LazyLock<Mutex<Option<ProgressBar>>> = LazyLock::new(|| 
 /// # Arguments
 ///
 /// * `pb` - 进度条对象
+#[allow(dead_code)]
 pub fn set_global_progress(pb: ProgressBar) {
     *GLOBAL_PROGRESS.lock().unwrap() = Some(pb);
 }
 
 /// 清除全局进度条（结束后调用）
+#[allow(dead_code)]
 pub fn clear_global_progress() {
     *GLOBAL_PROGRESS.lock().unwrap() = None;
 }

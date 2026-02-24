@@ -166,13 +166,17 @@ fn validate_config(config: &Config) -> Result<()> {
                 if patch.url_patch.is_empty() {
                     anyhow::bail!("url_patch cannot be empty in patch rule");
                 }
-                if !patch.url_patch.starts_with("http://") && !patch.url_patch.starts_with("https://") {
+                if !patch.url_patch.starts_with("http://")
+                    && !patch.url_patch.starts_with("https://")
+                {
                     anyhow::bail!("url_patch must be a valid HTTP or HTTPS URL");
                 }
                 if patch.sha256_src.is_empty() {
                     anyhow::bail!("sha256_src cannot be empty in patch rule");
                 }
-                if patch.sha256_src.len() != 64 || !patch.sha256_src.chars().all(|c| c.is_ascii_hexdigit()) {
+                if patch.sha256_src.len() != 64
+                    || !patch.sha256_src.chars().all(|c| c.is_ascii_hexdigit())
+                {
                     anyhow::bail!("sha256_src must be a valid 64-character hex string");
                 }
             }

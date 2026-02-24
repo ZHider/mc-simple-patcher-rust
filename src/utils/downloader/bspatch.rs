@@ -57,7 +57,9 @@ pub async fn bspatch(patch_file: &Path, src_file: &Path, dst_file: &Path) -> Res
         dst_file.display()
     );
 
-    let src = fs::read(src_file).await.context("读取 src 文件到内存失败")?;
+    let src = fs::read(src_file)
+        .await
+        .context("读取 src 文件到内存失败")?;
     let patch = fs::read(patch_file)
         .await
         .context("读取 patch file 到内存失败")?;
@@ -85,10 +87,7 @@ pub async fn bspatch(patch_file: &Path, src_file: &Path, dst_file: &Path) -> Res
 /// # Returns
 ///
 /// * `Result<Option<PathBuf>>` - 成功时返回找到的源文件路径，未找到返回 None
-pub fn find_patch_source_file(
-    matched_file: &Path,
-    sha256_src: &str,
-) -> Result<Option<PathBuf>> {
+pub fn find_patch_source_file(matched_file: &Path, sha256_src: &str) -> Result<Option<PathBuf>> {
     // 生成候选文件列表：原始文件、.disabled 文件、.backup 文件
     let candidates = vec![
         matched_file.to_path_buf(),
@@ -211,10 +210,8 @@ fn handle_src_dst_conflict(src_file: &Path) -> Result<PathBuf> {
         "src 和 dst 文件名相同，重命名源文件为 .backup: {}",
         backup_path.display()
     );
-    std::fs::rename(src_file, &backup_path).context(format!(
-        "无法重命名源文件为 .backup: {:?}",
-        src_file
-    ))?;
+    std::fs::rename(src_file, &backup_path)
+        .context(format!("无法重命名源文件为 .backup: {:?}", src_file))?;
     Ok(backup_path)
 }
 
@@ -234,10 +231,8 @@ fn handle_src_after_patch(src_file: &Path, keep_src: bool) -> Result<()> {
     if keep_src {
         let backup_path = make_backup_path(src_file);
         log::info!("保留源文件为 .backup: {}", backup_path.display());
-        std::fs::rename(src_file, &backup_path).context(format!(
-            "无法重命名源文件为 .backup: {:?}",
-            src_file
-        ))?;
+        std::fs::rename(src_file, &backup_path)
+            .context(format!("无法重命名源文件为 .backup: {:?}", src_file))?;
     } else {
         log::info!("删除源文件：{}", src_file.display());
         std::fs::remove_file(src_file).context(format!("无法删除源文件：{:?}", src_file))?;
@@ -256,9 +251,7 @@ fn handle_src_after_patch(src_file: &Path, keep_src: bool) -> Result<()> {
 /// # Returns
 ///
 /// * `Result<Option<PathBuf>>` - 成功时返回最终补丁后的文件路径
-pub async fn apply_downloaded_patches(
-    tasks: Vec<PatchDownloadTask>,
-) -> Result<Option<PathBuf>> {
+pub async fn apply_downloaded_patches(tasks: Vec<PatchDownloadTask>) -> Result<Option<PathBuf>> {
     if tasks.is_empty() {
         return Ok(None);
     }

@@ -292,15 +292,12 @@ async fn apply_patches_and_handle_result(
 /// # Returns
 ///
 /// * `Result<()>` - 成功时返回空值，失败时返回错误
-async fn download_fallback_files(
-    group: &GroupConfig,
-    work_dir: &Path,
-) -> Result<()> {
+async fn download_fallback_files(group: &GroupConfig, work_dir: &Path) -> Result<()> {
     for file_rule in &group.files {
-        if !file_rule.patches.is_empty() {
-            if let Some(task) = build_file_downloadinfo(work_dir, file_rule).await? {
-                download_files_with_progress(vec![task]).await?;
-            }
+        if !file_rule.patches.is_empty()
+            && let Some(task) = build_file_downloadinfo(work_dir, file_rule).await?
+        {
+            download_files_with_progress(vec![task]).await?;
         }
     }
     Ok(())
