@@ -8,6 +8,7 @@ use std::path::Path;
 
 use crate::utils::downloader;
 use crate::utils::downloader::hash_check;
+use crate::utils::temp_dir;
 
 /// 检查并执行自更新
 ///
@@ -57,16 +58,9 @@ async fn perform_update(update_url: &str) -> Result<bool> {
     log::debug!("当前可执行文件路径: {}", current_exe.display());
 
     // 下载新版本到临时文件
-    let temp_dir = env::temp_dir();
-    let temp_file = temp_dir.join(format!(
-        "mc_simple_patcher_update_{}.tmp",
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_nanos()
-    ));
+    let temp_file = temp_dir()?.join("mc_simple_patcher_update.exe.tmp");
 
-    log::debug!("下载更新到临时文件: {:?}", temp_file);
+    log::debug!("下载更新到临时文件: {:?}", temp_file.display());
 
     if let Some(true) = check_neednot_update(update_url, &current_exe).await? {
         log::debug!("文件已存在且完整，或者未能检测到远程SHA256，跳过下载");
@@ -118,19 +112,25 @@ fn replace_executable(current_exe: &Path, new_exe: &Path) -> Result<()> {
 
         // 将新文件复制到当前可执行文件位置
         // 在Windows上，我们需要使用批处理脚本来实现延迟替换
-        let script_path = current_exe.with_extension("bat");
+        let script_path = temp_dir()?.join("update.bat");
 
         // 创建一个批处理脚本，等待当前进程退出后替换文件
+        let old_backup_path = temp_dir()?
+            .join(
+                current_exe
+                    .file_name()
+                    .expect("无法获取当前执行文件的文件名"),
+            )
+            .with_added_extension("old");
         let script_content = format!(
-            "@echo off\r\n
-            chcp 65001>nul\r\n
-            :loop\r\n
-            timeout /t 1 /nobreak >nul\r\n
-            del \"{}\" 2>nul\r\n
-            if exist \"{}\" goto loop\r\n
-            move \"{}\" \"{}\"\r\n
-            del \"%~f0\"\r\n",
+            "chcp 65001>nul\r\n
+:loop\r\n
+timeout /t 1 /nobreak >nul\r\n
+move /Y \"{}\" \"{}\" \r\n
+if exist \"{}\" goto loop\r\n
+copy /Y \"{}\" \"{}\"\r\n",
             current_exe.display(),
+            old_backup_path.display(),
             current_exe.display(),
             new_exe.display(),
             current_exe.display()

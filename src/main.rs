@@ -7,7 +7,9 @@ use crate::{
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use std::{
-    fs::File, io::{Read, Write}, path::{Path, PathBuf}
+    fs::File,
+    io::{Read, Write},
+    path::{Path, PathBuf},
 };
 
 pub mod config;
@@ -85,6 +87,14 @@ async fn main() -> Result<()> {
     logger::init_logger(args.debug)?;
 
     log::info!("Minecraft 简易补丁工具启动");
+
+    // 删除临时文件夹
+    if let Ok(temp_dir) = utils::temp_dir()
+        && temp_dir.is_dir()
+        && let Err(e) = std::fs::remove_dir_all(temp_dir)
+    {
+        log::debug!("未能删除文件夹 {}：{}", temp_dir.display(), e);
+    }
 
     let result = match args.command {
         Some(Commands::Generate { toml_file }) => {

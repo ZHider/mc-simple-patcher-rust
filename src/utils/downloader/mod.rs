@@ -14,7 +14,8 @@ use std::{path::Path, sync::OnceLock, time::Duration};
 use crate::{
     global_config::get_global_config,
     utils::{
-        downloader::helpers::{support_download_range, url_get, url_get_range}, get_filename
+        downloader::helpers::{support_download_range, url_get, url_get_range},
+        get_filename, temp_dir,
     },
 };
 use tokio::io::{AsyncSeekExt, AsyncWriteExt};
@@ -149,7 +150,9 @@ async fn determine_gz_support(
         Ok(_) => {
             // GZ文件存在，使用压缩版本
             log::info!("检测到服务器有{}，正在下载……", gz_url);
-            let dest_path_gz = dest_path.with_added_extension("gz");
+            let dest_path_gz = temp_dir()?
+                .join(dest_path.file_name().context("无法获取文件名！")?)
+                .with_added_extension("gz");
             Ok((gz_response, dest_path_gz, true)) // 需要解压缩
         }
         Err(e) => {
@@ -291,7 +294,7 @@ async fn download_with_progress_logic(
     download_with_retries(response, total_size, &mut dest_file, &tx).await?;
 
     // 完成下载后清理资源
-    finalize_download(dest_file, tx, updater_handle).await?;
+    finalize_download(&mut dest_file, tx, updater_handle).await?;
 
     Ok(true)
 }
@@ -424,12 +427,13 @@ async fn download_with_progress_updates(
 
 /// 完成下载后清理资源
 async fn finalize_download(
-    mut dest_file: tokio::fs::File,
+    dest_file: &mut tokio::fs::File,
     tx: tokio::sync::mpsc::Sender<u64>,
     updater_handle: tokio::task::JoinHandle<()>,
 ) -> Result<()> {
     // 刷新文件缓冲区
     dest_file.flush().await.context("刷新文件缓冲区失败")?;
+    dest_file.sync_data().await?;
 
     // 关闭发送端，通知 updater 完成
     drop(tx);

@@ -10,7 +10,7 @@ use sha2::{Digest, Sha256};
 use std::fs::File;
 use std::io::Read;
 use std::path::Path;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 /// 计算文件的SHA256哈希值
 ///
@@ -85,4 +85,25 @@ pub fn get_filename(file_path: &Path) -> Result<Arc<str>> {
             .context(format!("无法获取文件名: {:?}", file_path))?
             .to_string_lossy(),
     ))
+}
+
+pub static TEMP_DIR: OnceLock<Arc<Path>> = OnceLock::new();
+
+pub fn temp_dir() -> Result<&'static Path> {
+    use std::{env, fs};
+
+    let temp_dir = TEMP_DIR.get_or_init(|| {
+        log::debug!("初始化临时文件夹...");
+        let mut temp_dir = env::current_dir().expect("无法获取当前文件夹");
+        temp_dir.push(".mc_patcher.tmp");
+
+        temp_dir.into()
+    });
+
+    if !temp_dir.is_dir()
+        && let Err(e) = fs::create_dir_all(temp_dir.as_ref())
+    {
+        anyhow::bail!("未能创建临时文件夹 {}：{}", temp_dir.display(), e);
+    }
+    Ok(TEMP_DIR.get().unwrap())
 }

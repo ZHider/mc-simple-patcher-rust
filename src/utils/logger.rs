@@ -41,11 +41,6 @@ impl log::Log for DualLogger {
     }
 
     fn log(&self, record: &Record) {
-        // if let Some(mp) = record.module_path()
-        //     && mp == "reqwest::connect"
-        // {
-        //     return;
-        // }
         if self.enabled(record.metadata()) {
             use console::Style;
 
@@ -89,18 +84,17 @@ impl log::Log for DualLogger {
                         .and(stdout.flush());
                 }
             }
-
-            // 同时写入日志文件
-            if let Ok(mut file) = self.file.lock() {
-                let timestamp = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S");
-                let _ = writeln!(
-                    file,
-                    "[{}] [{}] {}",
-                    timestamp,
-                    record.level(),
-                    record.args()
-                );
-            }
+        }
+        // 写入日志文件
+        if let Ok(mut file) = self.file.lock() {
+            let timestamp = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S");
+            let _ = writeln!(
+                file,
+                "[{}] [{}] {}",
+                timestamp,
+                record.level(),
+                record.args()
+            );
         }
     }
 
