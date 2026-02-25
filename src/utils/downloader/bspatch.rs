@@ -50,7 +50,7 @@ pub fn make_disabled_path(file: &Path) -> PathBuf {
 ///
 /// * `Result<()>` - 成功时返回空值，失败时返回错误
 pub async fn bspatch(patch_file: &Path, src_file: &Path, dst_file: &Path) -> Result<()> {
-    log::info!(
+    log::debug!(
         "开始进行文件 bspatch：'{}' + '{}' -> '{}'",
         src_file.display(),
         patch_file.display(),
@@ -191,7 +191,7 @@ pub fn match_patch_tasks(
 
     let patch = match matching_patch {
         Some(p) => {
-            log::info!("找到匹配的补丁配置（sha256_src 匹配当前文件）");
+            log::debug!("找到匹配的补丁配置（sha256_src 匹配当前文件）");
             log::trace!("补丁 URL: {}", p.url_patch);
             p
         }
@@ -243,7 +243,7 @@ pub fn match_patch_tasks(
 /// * `Result<PathBuf>` - 成功时返回备份文件路径，失败时返回错误
 fn handle_src_dst_conflict(src_file: &Path) -> Result<PathBuf> {
     let backup_path = make_backup_path(src_file);
-    log::info!(
+    log::debug!(
         "src 和 dst 文件名相同，重命名源文件为 .backup: {}",
         backup_path.display()
     );
@@ -310,7 +310,7 @@ pub async fn apply_downloaded_patches(tasks: &mut [PatchDownloadTask]) -> Result
             current_file.clone().unwrap()
         };
 
-        log::info!("应用补丁：{}", task.patch.url_patch);
+        log::trace!("应用补丁：{}", task.patch.url_patch);
 
         // 确保 dest_path 已设置
         let patch_path = task

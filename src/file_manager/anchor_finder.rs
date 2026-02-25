@@ -16,18 +16,18 @@ use walkdir::WalkDir;
 ///
 /// * `Option<PathBuf>` - 如果找到锚点则返回路径，否则返回 None
 pub fn find_anchor(anchor_name: &str, start_dir: &Path, max_depth: usize) -> Option<PathBuf> {
-    log::info!("开始搜索锚点: {}", anchor_name);
+    log::trace!("开始搜索锚点: {}", anchor_name);
 
     // 检查当前目录是否包含名为 anchor_name 的文件或文件夹
     let current_path = start_dir.join(anchor_name);
     if current_path.exists() {
         return if current_path.is_file() {
             // 如果是文件，返回其所在目录
-            log::info!("在当前目录找到锚点文件: {}", current_path.display());
+            log::debug!("在当前目录找到锚点文件: {}", current_path.display());
             current_path.parent().map(|p| p.to_path_buf())
         } else if current_path.is_dir() {
             // 如果是目录，返回该目录
-            log::info!("在当前目录找到锚点目录: {}", current_path.display());
+            log::debug!("在当前目录找到锚点目录: {}", current_path.display());
             Some(current_path)
         } else {
             None
@@ -72,7 +72,7 @@ pub fn find_anchor_optimized(
     start_dir: &Path,
     max_depth: usize,
 ) -> Option<PathBuf> {
-    log::info!("使用优化策略搜索锚点: {}", anchor_name);
+    log::trace!("使用优化策略搜索锚点: {}", anchor_name);
 
     // 检查特殊目录结构并提前返回
     if let Some(result) = check_special_structures(anchor_name, start_dir) {
@@ -89,12 +89,12 @@ fn check_special_structures(anchor_name: &str, start_dir: &Path) -> Option<PathB
     fn has_mc_vers_dir(anchor_name: &str, start_dir: &Path) -> Option<PathBuf> {
         let versions_path = start_dir.join(".minecraft").join("versions");
         if versions_path.is_dir() {
-            log::info!(
+            log::trace!(
                 "发现.minecraft/versions文件夹，进行广度优先搜索anchor文件: {}",
                 anchor_name
             );
             if let Some(result) = breadth_first_search_for_anchor(&versions_path, anchor_name, 2) {
-                log::info!("在.minecraft/versions结构中找到anchor文件");
+                log::debug!("在.minecraft/versions结构中找到anchor文件");
                 return Some(result);
             }
         }
@@ -105,14 +105,14 @@ fn check_special_structures(anchor_name: &str, start_dir: &Path) -> Option<PathB
 
     // 策略1: 判断当前目录是否为`mods`。如果有，查看父目录下是否有anchor文件。
     if start_dir.file_name().is_some_and(|name| name == "mods") {
-        log::info!(
+        log::trace!(
             "当前目录是mods目录，检查父目录下是否有anchor文件: {}",
             anchor_name
         );
         if let Some(parent) = start_dir.parent() {
             let anchor_path = parent.join(anchor_name);
             if anchor_path.exists() && anchor_path.is_file() {
-                log::info!("在父目录找到anchor文件: {}", anchor_path.display());
+                log::debug!("在父目录找到anchor文件: {}", anchor_path.display());
                 return Some(parent.to_path_buf());
             }
         }
@@ -121,13 +121,13 @@ fn check_special_structures(anchor_name: &str, start_dir: &Path) -> Option<PathB
     // 策略2: 判断当前目录下是否有`mods`文件夹。如果有，查看当前目录下是否有anchor文件。
     let mods_path = start_dir.join("mods");
     if mods_path.is_dir() {
-        log::info!(
+        log::trace!(
             "当前目录包含mods文件夹，检查当前目录下是否有anchor文件: {}",
             anchor_name
         );
         let anchor_path = start_dir.join(anchor_name);
         if anchor_path.exists() && anchor_path.is_file() {
-            log::info!("在当前目录找到anchor文件: {}", anchor_path.display());
+            log::debug!("在当前目录找到anchor文件: {}", anchor_path.display());
             return Some(start_dir.to_path_buf());
         }
     }

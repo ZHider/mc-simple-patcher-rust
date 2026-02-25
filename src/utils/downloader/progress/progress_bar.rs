@@ -4,6 +4,8 @@
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use std::sync::LazyLock;
 
+use crate::global_config;
+
 pub const PROGRESS_BAR_REFREST_RATE: u8 = 4;
 pub const TICK_INTERVAL_MS: u64 = 250;
 
@@ -12,14 +14,14 @@ static DEFAULT_PROGRESS_STYLE: LazyLock<ProgressStyle> = LazyLock::new(|| {
     ProgressStyle::default_bar()
         .template("{prefix:.bold.dim} {spinner:.green} [{bar:.cyan/blue}] {bytes}/{total_bytes} ({eta}) {msg}")
         .unwrap()
-        .progress_chars("#>-")
+        .progress_chars("=>-")
 });
 
 static SINGLE_PROGRESS_STYLE: LazyLock<ProgressStyle> = LazyLock::new(|| {
     ProgressStyle::default_bar()
         .template("{spinner:.green} [{bar:.cyan/blue}] {bytes}/{total_bytes} ({eta}) {msg}")
         .unwrap()
-        .progress_chars("#>-")
+        .progress_chars("=>-")
 });
 
 /// 设置多进度条容器
@@ -36,7 +38,8 @@ pub fn create_progress_bar_single() -> ProgressBar {
     let pb = ProgressBar::new(0);
     pb.set_style(SINGLE_PROGRESS_STYLE.clone());
     pb.enable_steady_tick(std::time::Duration::from_millis(250));
-    pb
+    global_config::set_global_progress(pb);
+    global_config::get_global_progress().unwrap()
 }
 
 /// 创建多进度条中的一个

@@ -75,8 +75,7 @@ async fn process_group(group: &GroupConfig) -> Result<()> {
 
     // 计算工作目录
     let work_dir = anchor_dir.join(&group.root);
-    log::info!("工作目录：{}", work_dir.display());
-    log::trace!("工作目录完整路径：{:?}", work_dir);
+    log::debug!("工作目录：{}", work_dir.display());
 
     // 获取符合这个组规则的所有现有文件
     log::trace!("编译正则表达式：{:?}", group.pattern);
@@ -213,7 +212,7 @@ fn process_matched_file(
     files_to_download: &mut Vec<DownloadTask>,
     patch_tasks: &mut Vec<crate::utils::downloader::bspatch::PatchDownloadTask>,
 ) -> Result<()> {
-    log::info!("找到匹配的文件：{}", matched_file.display());
+    log::trace!("找到匹配的文件：{}", matched_file.display());
     log::trace!(
         "文件规则：url={}, patches_count={}",
         file_rule.url,

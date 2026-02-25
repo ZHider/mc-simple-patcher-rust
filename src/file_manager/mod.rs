@@ -130,7 +130,7 @@ pub fn find_disabled_file(file_path: &Path) -> Option<PathBuf> {
     let disabled_path = create_disabled_path(file_path);
 
     if disabled_path.exists() {
-        log::info!("找到对应的 .disabled 文件: {}", disabled_path.display());
+        log::debug!("找到对应的 .disabled 文件: {}", disabled_path.display());
         Some(disabled_path)
     } else {
         None
