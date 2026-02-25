@@ -38,8 +38,8 @@ pub fn create_progress_bar_single() -> ProgressBar {
     let pb = ProgressBar::new(0);
     pb.set_style(SINGLE_PROGRESS_STYLE.clone());
     pb.enable_steady_tick(std::time::Duration::from_millis(250));
-    global_config::set_global_progress(pb);
-    global_config::get_global_progress().unwrap()
+    global_config::set_global_progress(&pb);
+    pb
 }
 
 /// 创建多进度条中的一个

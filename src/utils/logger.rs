@@ -72,13 +72,11 @@ impl log::Log for DualLogger {
 
             if record.level() == log::Level::Error {
                 eprintln!("{} {}", level_tag, record.args());
+            } else if let Some(pb) = global_config::get_global_progress() {
+                let msg = format!("{} {}", level_tag, record.args());
+                pb.println(msg);
             } else {
-                if let Some(pb) = global_config::get_global_progress() {
-                    let msg = format!("{} {}", level_tag, record.args());
-                    pb.println(msg);
-                } else {
-                    println!("{} {}", level_tag, record.args());
-                }
+                println!("{} {}", level_tag, record.args());
             }
         }
         // 写入日志文件

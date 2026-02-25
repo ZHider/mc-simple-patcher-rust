@@ -51,7 +51,11 @@ pub async fn execute_patch(config: Arc<Config>) -> Result<()> {
 ///
 /// * `Result<()>` - 成功时返回空值，失败时返回错误
 async fn process_group(group: &GroupConfig) -> Result<()> {
-    log::info!("处理组：anchor={}", group.anchor);
+    log::info!(
+        "处理组：\n\tanchor={}\n\tpattern={:?}",
+        group.anchor,
+        group.pattern
+    );
     log::debug!(
         "组配置详情：mirror={}, delete={}, recursive={}, pattern={:?}",
         group.mirror,

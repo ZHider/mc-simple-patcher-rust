@@ -1,4 +1,4 @@
-use indicatif::ProgressBar;
+use indicatif::{ProgressBar, WeakProgressBar};
 
 use crate::config::Config;
 use std::sync::{Arc, LazyLock, Mutex, RwLock};
@@ -29,7 +29,8 @@ pub fn get_global_config() -> Arc<Config> {
 }
 
 // 全局进度条句柄
-static GLOBAL_PROGRESS: LazyLock<Mutex<Option<ProgressBar>>> = LazyLock::new(|| Mutex::new(None));
+static GLOBAL_PROGRESS: LazyLock<Mutex<WeakProgressBar>> =
+    LazyLock::new(|| Mutex::new(WeakProgressBar::new()));
 
 /// 设置全局进度条（在创建进度条时调用）
 ///
@@ -37,14 +38,8 @@ static GLOBAL_PROGRESS: LazyLock<Mutex<Option<ProgressBar>>> = LazyLock::new(|| 
 ///
 /// * `pb` - 进度条对象
 #[allow(dead_code)]
-pub fn set_global_progress(pb: ProgressBar) {
-    *GLOBAL_PROGRESS.lock().unwrap() = Some(pb);
-}
-
-/// 清除全局进度条（结束后调用）
-#[allow(dead_code)]
-pub fn clear_global_progress() {
-    *GLOBAL_PROGRESS.lock().unwrap() = None;
+pub fn set_global_progress(pb: &ProgressBar) {
+    *GLOBAL_PROGRESS.lock().unwrap() = pb.downgrade();
 }
 
 /// 获取全局进度条的引用（如果存在）
@@ -53,5 +48,5 @@ pub fn clear_global_progress() {
 ///
 /// * `Option<ProgressBar>` - 如果存在则返回进度条的克隆副本，否则返回 None
 pub fn get_global_progress() -> Option<ProgressBar> {
-    GLOBAL_PROGRESS.lock().unwrap().clone()
+    GLOBAL_PROGRESS.lock().unwrap().upgrade()
 }

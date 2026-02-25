@@ -15,7 +15,6 @@ use super::helpers::decompress_gz_sync;
 use super::helpers::get_file_length;
 use super::helpers::{support_download_range, url_get_range};
 use super::progress::create_progress_bar_single;
-use crate::global_config;
 use crate::utils::temp_dir;
 
 /// 下载任务结构
@@ -179,7 +178,6 @@ pub async fn download_file(url: &str, dest_path: &Path, check_sha256: bool) -> R
     let pb = create_progress_bar_single();
     let (downloaded, _) =
         download_file_internal(url, Some(dest_path), check_sha256, Some(pb), false).await?;
-        global_config::clear_global_progress();
     Ok(downloaded)
 }
 
