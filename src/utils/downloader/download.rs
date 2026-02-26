@@ -184,7 +184,8 @@ pub async fn download_file(url: &str, dest_path: &Path, check_sha256: bool) -> R
 /// 下载补丁文件（从 response 获取文件名）
 /// 返回实际下载的补丁文件路径
 pub async fn download_patch_file_auto(url: &str) -> Result<PathBuf> {
-    let (_, path) = download_file_internal(url, None, false, None, false).await?;
+    let pb = create_progress_bar_single();
+    let (_, path) = download_file_internal(url, None, false, Some(pb), false).await?;
     Ok(path)
 }
 
