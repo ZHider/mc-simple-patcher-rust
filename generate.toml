@@ -1,17 +1,20 @@
-# 更新文件地址，每次启动都会检查更新
 metadata = "http://example.com/metadata.toml"
+version = 1
 
-# 版本号，目前仅作为标识作用
-# 但请不要删除，这是必须的键
-version = 0
+[self_update]
+url = "http://example.com/mc_simple_patcher.exe"
+[[self_update.patches]]
+url_patch = "https://example.com/mc_simple_patcher.exe.v0.2.5.patch"
+sha256_src = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+keep_src = true
 
-# 这里使用强制 QUIC 协议作为示例
-# 实际使用若不需要 QUIC，请将这里设置成 false，或者删除整个 network 表
 [network]
 quic = true
 ignore_invalid_cert = false
 timeout = 10
+retry = 10
 
+# <必须> 只有这个表会被遍历并替换成对应的 groups 表
 [[generate]]
 # 锚点文件/文件夹，用于定位工作目录
 # 一般可以设置为 Minecraft 主 jar 文件
@@ -35,3 +38,18 @@ name = true          # 是否包含文件名
 mod_id = false       # 是否包含 mod_id（对于 JAR 文件）
 mod_version = false  # 是否包含 mod_version（对于 JAR 文件）
 sha256 = true        # 是否计算并包含文件的 SHA256 哈希值
+
+# [可选] 如果使用patch，这个部分将被注入到相应的文件的条目下
+[[patches]]
+# <必须> 这个 patch 条目将被注入到这个 SHA256 的文件规则条目下
+sha256_dst = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+# <必须> BSDIFF4-format 补丁 URL 路径
+url_patch = "https://example.com/files/tac-0.3.10.1-1.18.2.jar.v1.patch"
+
+# <必须> 源文件的 SHA256 哈希值（64 字符十六进制字符串）
+sha256_src = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+# [可选] 补丁后是否保留源文件。默认为 true
+# 如果保留，则其将被重命名为 <filename>.backup
+keep_src = true

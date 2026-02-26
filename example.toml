@@ -98,8 +98,11 @@ url = "https://example.com/files/tac-0.3.10.1-1.18.2.jar"
 [[groups.files.patches]]
 # BSDIFF4-format 补丁 URL 路径
 url_patch = "https://example.com/files/tac-0.3.10.1-1.18.2.jar.v1.patch"
+
 # 源文件的 SHA256 哈希值（64 字符十六进制字符串）
+# 其意义为：这个 SHA256 的文件，经过这个补丁后，可以到达最新版本。
 sha256_src = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
 # 补丁成功后，是否保留源文件。默认为 true
 # 如果保留，则其将被重命名为 <filename>.backup
 keep_src = true

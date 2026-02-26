@@ -13,11 +13,12 @@ use crate::global_config;
 pub struct DualLogger {
     file: Mutex<std::fs::File>,
     debug: bool,
+    quiet: bool,
 }
 
 impl DualLogger {
     /// 创建新的双重日志记录器
-    pub fn new(debug: bool) -> Result<Self> {
+    pub fn new(debug: bool, quiet: bool) -> Result<Self> {
         let file = OpenOptions::new()
             .create(true)
             .write(true)
@@ -27,13 +28,16 @@ impl DualLogger {
         Ok(DualLogger {
             file: Mutex::new(file),
             debug,
+            quiet,
         })
     }
 }
 
 impl log::Log for DualLogger {
     fn enabled(&self, metadata: &Metadata) -> bool {
-        if self.debug {
+        if self.quiet {
+            false
+        } else if self.debug {
             metadata.level() <= log::Level::Trace
         } else {
             metadata.level() <= log::Level::Info
@@ -108,8 +112,8 @@ impl log::Log for DualLogger {
 /// # Returns
 ///
 /// * `Result<()>` - 成功时返回空值，失败时返回错误
-pub fn init_logger(debug: bool) -> Result<()> {
-    let logger = DualLogger::new(debug)?;
+pub fn init_logger(debug: bool, quiet: bool) -> Result<()> {
+    let logger = DualLogger::new(debug, quiet)?;
 
     log::set_boxed_logger(Box::new(logger))
         .map(|()| log::set_max_level(log::LevelFilter::Trace))
@@ -127,7 +131,7 @@ mod tests {
     #[test]
     fn test_logger_initialization() -> Result<()> {
         // 测试日志初始化功能
-        let result = init_logger(false);
+        let result = init_logger(false, false);
 
         // 验证初始化成功
         assert!(result.is_ok());
@@ -141,7 +145,7 @@ mod tests {
     #[test]
     fn test_dual_logger_creation() -> Result<()> {
         // 测试 DualLogger 创建功能
-        let logger = DualLogger::new(false);
+        let logger = DualLogger::new(false, false);
 
         // 验证创建成功
         assert!(logger.is_ok());

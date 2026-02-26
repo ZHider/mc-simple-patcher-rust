@@ -72,6 +72,10 @@ struct Args {
     /// SHA256模式：计算指定文件的SHA256哈希值
     #[arg(short, long, value_name = "FILE")]
     sha256: Option<std::path::PathBuf>,
+
+    /// 安静模式，不输出log、不提示点击继续
+    #[arg(short, long)]
+    quiet: bool,
 }
 
 /// 程序入口点
@@ -84,7 +88,7 @@ async fn main() -> Result<()> {
     let args = Args::parse();
 
     // 初始化日志系统
-    logger::init_logger(args.debug)?;
+    logger::init_logger(args.debug, args.quiet)?;
 
     log::info!("Minecraft 简易补丁工具启动");
 
@@ -111,7 +115,7 @@ async fn main() -> Result<()> {
                 execute_with_config_2update(args.config).await
             } else {
                 let config_path = PathBuf::from(&args.config);
-                execute_with_config(&config_path).await
+                execute_with_config(&config_path, !args.quiet).await
             }
         }
     };
@@ -124,7 +128,9 @@ async fn main() -> Result<()> {
     }
 
     // 无论成功还是失败，都等待用户按键退出
-    pause_before_exit();
+    if !args.quiet {
+        pause_before_exit();
+    }
 
     result
 }
@@ -212,7 +218,7 @@ fn pause_before_exit() {
 /// # Returns
 ///
 /// * `Result<()>` - 成功时返回空值，失败时返回错误
-async fn execute_with_config(config_path: &std::path::Path) -> Result<()> {
+async fn execute_with_config(config_path: &std::path::Path, pause: bool) -> Result<()> {
     log::info!("正在解析配置文件: {}", config_path.display());
     let config = parse_metadata_with_update(config_path).await?;
 
@@ -222,7 +228,9 @@ async fn execute_with_config(config_path: &std::path::Path) -> Result<()> {
     // 检查自更新
     check_self_update().await;
 
-    pause_before_exit();
+    if pause {
+        pause_before_exit();
+    }
     main_controller::execute_patch(get_global_config()).await
 }
 

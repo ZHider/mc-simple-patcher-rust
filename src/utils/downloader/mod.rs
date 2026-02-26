@@ -16,3 +16,4 @@ pub use client::{build_request, create_http_client};
 pub use download::{DownloadTask, download_file, download_file_internal, download_patch_file_auto};
 pub use helpers::get_filename_from_response;
 pub use metadata::update_metadata;
+pub use progress::create_progress_bar_single;

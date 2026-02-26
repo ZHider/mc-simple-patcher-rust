@@ -3,19 +3,20 @@
 
 use anyhow::{Context, Result};
 use hex::ToHex;
-use indicatif::ProgressBar;
 use rayon::prelude::*;
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
 use toml::Value;
 
-use crate::config::GroupConfig;
+use crate::config::{FilePatch, GroupConfig};
 use crate::file_manager;
 use crate::main_controller::DEFAULT_MAX_DEPTH;
+use crate::utils::downloader::create_progress_bar_single;
 use crate::utils::format_error_chain;
+
+type PatchRuleInjSrc = HashMap<String, Vec<FilePatch>>;
 
 /// 生成配置的规则定义
 #[derive(Debug, Deserialize)]
@@ -53,7 +54,7 @@ pub async fn generate_config_from_toml(toml_file: PathBuf) -> Result<()> {
     log::info!("共找到 {} 个生成规则", generator_rules_len);
 
     // 为每个生成规则扫描目录并添加到配置中
-    let generated_file_groups: Vec<_> = generator_rules
+    let mut generated_file_groups: Vec<_> = generator_rules
         .into_par_iter()
         .zip(1..generator_rules_len + 1)
         .map(|rule_idx| {
@@ -90,6 +91,16 @@ pub async fn generate_config_from_toml(toml_file: PathBuf) -> Result<()> {
         generated_file_groups_files_len
     );
 
+    // 应用补丁规则
+    if let Some(patch_rules) = extract_patches_rules(&generator_config)? {
+        log::info!(
+            "共找到对 {} 个文件的补丁规则，准备注入……",
+            patch_rules.len()
+        );
+        inject_patch_rules(patch_rules, &mut generated_file_groups);
+    }
+
+    // 应用文件规则
     inject_generator_config(&mut generator_config, generated_file_groups);
 
     // 生成输出文件
@@ -115,6 +126,29 @@ fn inject_generator_config(
         "groups".to_string(),
         Value::try_from(generated_file_groups).unwrap(),
     );
+}
+
+fn inject_patch_rules(patch_rules: PatchRuleInjSrc, generated_file_groups: &mut Vec<GroupConfig>) {
+    let mut patch_rules = patch_rules;
+
+    generated_file_groups
+        .iter_mut()
+        // 将所有 FileRule 展平为一个可变引用流
+        .flat_map(|group| group.files.iter_mut())
+        .for_each(|file_rule| {
+            if let Some(sha256) = &file_rule.sha256
+                && let Some(file_patches) = patch_rules.remove(sha256)
+            {
+                file_rule.patches = file_patches;
+            }
+        });
+
+    if !patch_rules.is_empty() {
+        log::warn!("补丁未能全部应用到文件规则中！以下是补丁列表：");
+        patch_rules.iter().for_each(|entry| {
+            log::warn!("Patch for file: {}\n\t{:?}", entry.0, entry.1);
+        });
+    }
 }
 
 /// 加载生成配置
@@ -144,18 +178,98 @@ fn load_generate_config(toml_file: &Path) -> Result<HashMap<String, Value>> {
 ///
 /// * `Result<Vec<GenerateRule>>` - 成功时返回生成规则向量，失败时返回错误
 fn extract_generator_rules(generate_config: &HashMap<String, Value>) -> Result<Vec<GenerateRule>> {
-    generate_config
+    let generate_array = generate_config
         .get("generate")
         .and_then(|v| v.as_array())
-        .context("生成规则文件中缺少 generate 数组")?
-        .iter()
-        .map(|v| {
-            let rule_map = v.as_table().context("生成规则必须是 Table")?;
+        .context("配置文件中缺少 `generate` 数组")?;
 
-            let rule_toml = toml::to_string(rule_map).context("转换生成规则失败")?;
-            toml::from_str(&rule_toml).context("解析生成规则失败")
+    generate_array
+        .iter()
+        .enumerate()
+        .map(|(i, v)| {
+            anyhow::ensure!(v.is_table(), "生成规则 #{} 必须是表 (Table)", i);
+            let der = serde::de::IntoDeserializer::into_deserializer(v.clone());
+            let rule: GenerateRule = der
+                .try_into()
+                .with_context(|| format!("无法作为 GroupConfig 读取，请检查格式：{:?}", v))?;
+            Ok(rule)
         })
         .collect()
+}
+
+/// 提取补丁规则列表
+///
+/// # Arguments
+///
+/// * `generate_config` - 生成配置的引用
+///
+/// # Returns
+///
+/// * `Result<Option<HashMap<String, PatchRule>>>`
+///
+///   - 成功时返回生成HashMap<SHA256, PatchRule>
+///   - 若没有该表，返回 Ok(None)
+///   - 失败时返回错误
+fn extract_patches_rules(
+    generate_config: &HashMap<String, Value>,
+) -> Result<Option<PatchRuleInjSrc>> {
+    fn get_string_from_table(
+        table: &toml::map::Map<String, Value>,
+        i: usize,
+        k: &str,
+    ) -> Result<String> {
+        Ok(table
+            .get(k)
+            .and_then(|v| v.as_str())
+            .context(format!("patches[{}] 缺少字段 {} 或类型错误", i, k))?
+            .to_string())
+    }
+
+    let patches = match generate_config.get("patches") {
+        Some(v) => v,
+        None => {
+            log::info!("未检查到 patches，跳过……");
+            return Ok(None);
+        }
+    };
+
+    let patches_array = patches.as_array().context("patches 必须是数组")?;
+
+    let rules: Vec<(String, FilePatch)> = patches_array
+        .iter()
+        .enumerate()
+        .map(|(index, item)| {
+            let table = item
+                .as_table()
+                .context(format!("patches[{}] 必须是表", index))?;
+
+            let sha256_dst = get_string_from_table(table, index, "sha256_dst")?;
+            let url_patch = get_string_from_table(table, index, "url_patch")?;
+            let sha256_src = get_string_from_table(table, index, "url_patch")?;
+
+            let keep_src = table
+                .get("keep_src")
+                .and_then(|v| v.as_bool())
+                .context(format!("patches[{}] 缺少字段 keep_src 或类型错误", index))?;
+
+            let patch_rule = FilePatch {
+                url_patch,
+                sha256_src,
+                keep_src,
+            };
+
+            Ok((sha256_dst, patch_rule))
+        })
+        .collect::<Result<Vec<(String, FilePatch)>>>()
+        .context("构建 patches 表时出错")?;
+
+    Ok(Some(rules.into_iter().fold(
+        HashMap::new(),
+        |mut acc, (key, value)| {
+            acc.entry(key).or_insert_with(Vec::new).push(value);
+            acc
+        },
+    )))
 }
 
 /// 处理单个生成规则
@@ -233,20 +347,20 @@ fn create_group_config(
     };
 
     // 创建进度跟踪器
-    let progress = FileProcessingProgressTracker::new(files.len());
+    let progress = create_progress_bar_single();
+    progress.set_length(files.len() as u64);
 
     // 使用 rayon 并行处理文件
     let file_rules: Vec<Result<crate::config::FileRule>> = files
         .into_par_iter()
         .map(|file_path| {
             let result = create_file_rule(rule, &file_path);
-            progress.update();
+            progress.inc(1);
             result
         })
         .collect();
 
-    progress.finish();
-    println!();
+    progress.finish_with_message("生成完成");
 
     // 处理结果
     for file_rule in file_rules {
@@ -256,6 +370,7 @@ fn create_group_config(
         }
     }
 
+    log::trace!("数组排序中……");
     new_group.files.sort_by(|a, b| {
         let key_a = a
             .name
@@ -273,35 +388,6 @@ fn create_group_config(
     });
 
     Ok(new_group)
-}
-
-/// 文件处理进度跟踪器
-struct FileProcessingProgressTracker {
-    pb: Mutex<ProgressBar>,
-}
-
-impl FileProcessingProgressTracker {
-    pub fn new(total: usize) -> Arc<Self> {
-        let pb = ProgressBar::new(total as u64);
-        pb.set_style(
-            indicatif::ProgressStyle::default_bar()
-                .template("[{bar:40.cyan/blue}] {pos}/{len} ({percent}%) {msg}")
-                .unwrap()
-                .progress_chars("=>-"),
-        );
-        pb.set_message("文件规则生成中: ");
-        Arc::new(Self { pb: Mutex::new(pb) })
-    }
-
-    pub fn update(&self) {
-        let guard = self.pb.lock().unwrap();
-        guard.inc(1);
-    }
-
-    pub fn finish(&self) {
-        let guard = self.pb.lock().unwrap();
-        guard.finish();
-    }
 }
 
 /// 创建文件规则
@@ -334,7 +420,7 @@ fn create_file_rule(rule: &GenerateRule, file_path: &Path) -> Result<crate::conf
     let sha256 = if rule.sha256 {
         match crate::utils::calculate_file_sha256(file_path) {
             Ok(hash) => {
-                let hash_str = hash.encode_hex();
+                let hash_str = hash.encode_hex::<String>().to_ascii_lowercase();
                 log::debug!("计算文件 {} 的 SHA256: {}", file_path.display(), hash_str);
                 Some(hash_str)
             }
