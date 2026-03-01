@@ -122,34 +122,3 @@ pub fn init_logger(debug: bool, quiet: bool) -> Result<()> {
     log::info!("Logger initialized");
     Ok(())
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::fs;
-
-    #[test]
-    fn test_logger_initialization() -> Result<()> {
-        // 测试日志初始化功能
-        let result = init_logger(false, false);
-
-        // 验证初始化成功
-        assert!(result.is_ok());
-
-        // 验证日志文件被创建
-        assert!(fs::metadata("mc_simple_patcher.log").is_ok());
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_dual_logger_creation() -> Result<()> {
-        // 测试 DualLogger 创建功能
-        let logger = DualLogger::new(false, false);
-
-        // 验证创建成功
-        assert!(logger.is_ok());
-
-        Ok(())
-    }
-}

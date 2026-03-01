@@ -128,7 +128,7 @@ fn inject_generator_config(
     );
 }
 
-fn inject_patch_rules(patch_rules: PatchRuleInjSrc, generated_file_groups: &mut Vec<GroupConfig>) {
+fn inject_patch_rules(patch_rules: PatchRuleInjSrc, generated_file_groups: &mut [GroupConfig]) {
     let mut patch_rules = patch_rules;
 
     generated_file_groups

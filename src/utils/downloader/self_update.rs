@@ -265,13 +265,3 @@ copy /Y \"{}\" \"{}\"\r\n",
 
     Ok(())
 }
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn test_replace_executable() {
-        // 由于替换可执行文件是一个敏感操作，我们只测试函数的存在
-        // 实际的替换操作在运行时进行
-        assert!(true);
-    }
-}

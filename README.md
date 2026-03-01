@@ -172,6 +172,33 @@ self_update_url = "http://example.com/mc_simple_patcher.exe"
 
 当配置了此字段后，程序启动时会自动检查并下载新版本，替换当前可执行文件。
 
+### 预计典型游戏文件结构
+
+```
+FOLDER/
+├── ...
+├── Plain Craft Launcher 2.exe  # PCL 启动器
+└── .minecraft/
+    ├── ...
+    └── versions/
+        ├── Minecraft version 1
+        |   ├── ...
+        |   ├── Minecraft version 1.jar
+        |   ├── config/
+        |   └── mods/
+        |       ├── ...
+        |       └── *.jar
+        ├── MC ver.2
+        |   ├── ...
+        |   ├── MC ver.2.jar
+        |   ├── config/
+        |   └── mods/
+        |       ├── ...
+        |       └── *.jar
+        └── ...
+    
+```
+
 ## 源代码相关
 
 ### 文件结构设计
