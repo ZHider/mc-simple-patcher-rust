@@ -68,6 +68,8 @@ mc_simple_patcher.exe -d
 ### CLI Usage
 
 ```bash
+A simple file sync&patch tool, with addtional support to Minecraft mod
+
 Usage: mc_simple_patcher.exe [OPTIONS] [COMMAND]
 
 Commands:
@@ -78,6 +80,7 @@ Options:
   -c, --config <CONFIG>  配置文件路径 [default: mc_simple_patcher.toml]
   -d, --debug            启用调试模式
   -s, --sha256 <FILE>    SHA256模式：计算指定文件的SHA256哈希值
+  -q, --quiet            安静模式，不输出log、不提示点击继续
   -h, --help             Print help
   -V, --version          Print version
 ```
@@ -148,14 +151,16 @@ mc_simple_patcher.exe generate <input.toml>
 使用 `[network]` 部分来配置网络相关选项：
 
 ```toml
-# 整个 network表 都是可选的
+# [可选] 整个 network 键都是可选的
 [network]
-# 是否强制切换到quic，只走UDP协议
+# 是否强制切换到 HTTP/3 quic，只走 UDP 协议，默认为 false
 quic = false
-# 是否忽略证书错误（对于自签名证书等情况）
+# 是否忽略证书错误，默认为 false
 ignore_invalid_cert = true
-# 下载超时时间，默认15秒
-timeout = 15
+# 下载超时时间，默认 15 秒
+timeout = 10
+# 下载遇到错误时重试次数，默认 3 次
+retry = 5
 ```
 
 - `quic`: 启用 HTTP/3 协议进行下载（默认为 false）
@@ -166,11 +171,35 @@ timeout = 15
 使用 `self_update_url` 字段来配置程序自更新：
 
 ```toml
-# 自更新地址（可选），如果指定，程序启动时会检查并更新自身
-self_update_url = "http://example.com/mc_simple_patcher.exe"
+[self_update]
+# 自更新地址，如果指定，程序启动时会检查 <URL>.sha256
+# 如果 sha256 和自身不同则开始更新自身
+# 下载时将总是检查 <filename>.<ext>.gz 文件是否存在，如果存在则优先下载
+url = "http://example.com/mc_simple_patcher.exe"
 ```
 
+> 配置格式适用版本号 >= 0.2.5
+> && `version` >= 1
+
 当配置了此字段后，程序启动时会自动检查并下载新版本，替换当前可执行文件。
+
+```toml
+# [可选] 使用补丁方式自更新
+[[self_update.patches]]
+# <必须> BSDIFF4-format 补丁 URL 路径
+url_patch = "https://example.com/mc_simple_patcher.exe.v0.2.5.patch"
+# <必须> 源文件的 SHA256 哈希值（64 字符十六进制字符串）
+sha256_src = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+# [可选] 补丁后是否保留源文件。默认为 true
+# 如果保留，则其将被重命名为 <filename>.backup
+keep_src = true
+```
+
+当配置了此字段后，程序启动时会自动检查：
+1. 如果当前文件的 sha256 == `sha256_src`，则下载该补丁。
+2. 下载补丁之后，对当前文件进行 bsdiff patch
+
+> Bsdiff Patch 功能 v0.2.7 后可用。
 
 ### 预计典型游戏文件结构
 
@@ -199,27 +228,6 @@ FOLDER/
     
 ```
 
-## 源代码相关
-
-### 文件结构设计
-
-- `config.rs`：配置文件解析
-- `file_manager`：文件管理和匹配
-- `file_manager/anchor_finder.rs`：锚点搜索功能
-- `utils/downloader`：网络下载功能
-- `main_controller.rs`：主控制器协调各模块
-- `main.rs`：程序入口点
-
-### 技术栈
-
-- Rust 2024 edition
-- Tokio 异步运行时
-- Rayon 多线程
-- Reqwest HTTP 客户端
-- Serde 数据序列化
-- ZIP 库用于处理 JAR 文件
-- Env_logger 彩色日志
-- Clap 命令行参数解析
 
 ## 后言
 

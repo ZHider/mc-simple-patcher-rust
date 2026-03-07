@@ -5,10 +5,15 @@ metadata = "http://example.com/metadata.toml"
 # <必须> 版本号，目前仅作为标识作用
 version = 1
 
+# [兼容] 如果你需要兼容 version == 0 / v0.2.3 以及之前的版本
+# 可用取消下面这行注释来进行自更新
+# self_update_url = "http://example.com/mc_simple_patcher.exe"
+
 # [可选] 自更新相关选项
 [self_update]
 # 自更新地址，如果指定，程序启动时会检查 <URL>.sha256
 # 如果 sha256 和自身不同则开始更新自身
+# 下载时将总是检查 <filename>.<ext>.gz 文件是否存在，如果存在则优先下载
 url = "http://example.com/mc_simple_patcher.exe"
 
 # [可选] 使用补丁方式自更新
