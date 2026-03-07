@@ -56,7 +56,7 @@ enum Commands {
 }
 
 #[derive(Parser, Debug)]
-#[command(author, version, about, long_about = None)]
+#[command(author="ZHider", version, about="A simple file sync&patch tool, with addtional support to Minecraft mod", long_about = None)]
 struct Args {
     #[command(subcommand)]
     command: Option<Commands>,
