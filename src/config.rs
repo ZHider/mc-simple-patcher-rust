@@ -82,7 +82,7 @@ pub struct GroupConfig {
 }
 
 /// 网络配置
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, Default)]
+#[derive(Serialize, Deserialize, Debug, Clone, Copy)]
 pub struct NetworkConfig {
     #[serde(default)]
     pub quic: bool,
@@ -92,6 +92,17 @@ pub struct NetworkConfig {
     pub timeout: u64,
     #[serde(default = "metadata_config_retry_default")]
     pub retry: u32,
+}
+
+impl Default for NetworkConfig {
+    fn default() -> Self {
+        Self {
+            quic: false,
+            ignore_invalid_cert: true,
+            timeout: 10,
+            retry: 10,
+        }
+    }
 }
 
 fn default_ignore_invalid_cert() -> bool {
@@ -115,6 +126,7 @@ pub struct Config {
     pub network: NetworkConfig,
     #[serde(default)]
     pub self_update: SelfUpdateConfig,
+    #[serde(default)]
     pub groups: Vec<GroupConfig>,
 }
 

@@ -49,7 +49,7 @@ pub fn matches_rule(file_path: &Path, rule: &FileRule, cache: &ModInfoCache) -> 
 }
 
 /// 检查文件名是否匹配（包括禁用文件名）
-fn check_name_match(file_name: &str, rule: &FileRule) -> bool {
+pub fn check_name_match(file_name: &str, rule: &FileRule) -> bool {
     if let Some(ref name) = rule.name {
         return file_name == name;
     }

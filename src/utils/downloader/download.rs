@@ -81,6 +81,9 @@ pub async fn download_file_internal(
     log::trace!("开始确定下载源和目标路径");
     let (response, dest_path_to_use, gz_compressed) = determine_gz_support(url, dest_path).await?;
 
+    // 检查HTTP响应码错误
+    let response = response.error_for_status()?;
+
     let result = if let Some(pb) = progress_bar {
         // 带进度条的下载
         log::trace!("使用进度条下载");

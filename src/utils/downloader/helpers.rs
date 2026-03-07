@@ -182,9 +182,10 @@ pub fn get_filename_from_response(resp: &Response) -> Result<String> {
     let filename = resp
         .url()
         .path_segments()
-        .and_then(|mut segments| segments.next_back())
-        .map(|s| s.to_string())
-        .context(format!("无法从 URL 中提取文件名：{}", resp.url()))?;
+        .context(format!("无法从 URL 中提取文件名：{}", resp.url()))?
+        .next_back()
+        .context("无法读取最后一个URL中的文本")?
+        .to_string();
 
     log::trace!("从 URL 获取文件名：{}", filename);
     Ok(filename)

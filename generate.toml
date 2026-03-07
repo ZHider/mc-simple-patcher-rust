@@ -24,6 +24,7 @@ anchor = "Minecraft.jar"
 root = "mods"
 
 # 用于匹配文件的正则表达式
+# 记得使用单引号取消反义
 pattern = '^.+\.jar$'
 
 # 是否包含子文件夹中的文件

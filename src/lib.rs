@@ -1,4 +1,5 @@
 pub mod config;
+pub mod generator;
 pub mod main_controller;
 
 pub mod file_manager;

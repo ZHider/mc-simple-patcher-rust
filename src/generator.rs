@@ -22,13 +22,18 @@ type PatchRuleInjSrc = HashMap<String, Vec<FilePatch>>;
 #[derive(Debug, Deserialize)]
 struct GenerateRule {
     anchor: String,
+    #[serde(default)]
     root: String,
     pattern: String,
+    #[serde(default)]
     recursive: bool,
     url_base: Option<String>,
     name: bool,
+    #[serde(default)]
     mod_id: bool,
+    #[serde(default)]
     mod_version: bool,
+    #[serde(default)]
     sha256: bool,
 }
 
@@ -165,7 +170,7 @@ fn load_generate_config(toml_file: &Path) -> Result<HashMap<String, Value>> {
         .context(format!("读取生成规则文件失败: {}", toml_file.display()))?;
 
     toml::from_str(&generate_rules_str)
-        .context(format!("解析生成规则文件失败: {}", toml_file.display()))
+        .context(format!("解析 TOML 文件失败: {}", toml_file.display()))
 }
 
 /// 提取生成规则列表
@@ -524,7 +529,9 @@ pub fn write_sha256(file_path: &Path) -> Result<()> {
     let sha256 =
         crate::utils::calculate_file_sha256(file_path).context("计算配置文件SHA256失败")?;
     let sha256_str = hex::encode(sha256);
-    let sha256_path = file_path.with_added_extension("sha256");
+    // 构建 .sha256 文件路径：在原文件路径后添加 .sha256 扩展名
+    let sha256_path_str = format!("{}.sha256", file_path.display());
+    let sha256_path = PathBuf::from(sha256_path_str);
     fs::write(&sha256_path, &sha256_str)
         .context(format!("写入配置文件SHA256失败: {}", sha256_path.display()))?;
     log::info!(

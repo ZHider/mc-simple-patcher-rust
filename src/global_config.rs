@@ -4,7 +4,7 @@ use crate::config::Config;
 use std::sync::{Arc, LazyLock, Mutex, RwLock};
 
 // 全局配置存储
-static GLOBAL_CONFIG: RwLock<Option<Arc<Config>>> = RwLock::new(None);
+pub static GLOBAL_CONFIG: RwLock<Option<Arc<Config>>> = RwLock::new(None);
 
 /// 初始化全局配置
 ///
